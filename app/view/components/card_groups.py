@@ -51,7 +51,7 @@ class TitledCardGroup(QWidget):
 class DraftCardGroup(TitledCardGroup):
     refreshRequested = Signal()
     CARD_HEIGHT = 35
-    MIN_VISIBLE = 5
+    MAX_VISIBLE = 4
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -94,6 +94,7 @@ class DraftCardGroup(TitledCardGroup):
 
     def updateStats(self, successCount: int, failCount: int, totalSize: int) -> None:
         totalCount = successCount + failCount
+        self.setVisible(totalCount > 0)
         self._retryButton.setVisible(failCount > 0)
         if totalCount == 0:
             self._ratioLabel.hide()
@@ -146,18 +147,14 @@ class DraftCardGroup(TitledCardGroup):
         self.updateGeometry()
 
     def sizeHint(self) -> QSize:
-        cards = self._cards()
-        content = sum(self._cardHeight(c) for c in cards)
-        minimum = sum(self._cardHeight(c) for c in cards[:self.MIN_VISIBLE])
-        padding = self._paddingHeight()
-        size = super().sizeHint()
-        return QSize(size.width(), max(padding + minimum, padding + content))
+        cards = self._cards()[:self.MAX_VISIBLE]
+        content = sum(self._cardHeight(card) for card in cards)
+        return QSize(super().sizeHint().width(), self._paddingHeight() + content)
 
     def minimumSizeHint(self) -> QSize:
         cards = self._cards()
-        content = sum(self._cardHeight(c) for c in cards[:self.MIN_VISIBLE])
-        size = super().sizeHint()
-        return QSize(size.width(), self._paddingHeight() + content)
+        content = self._cardHeight(cards[0]) if cards else 0
+        return QSize(super().sizeHint().width(), self._paddingHeight() + content)
 
     def _cards(self) -> list[QWidget]:
         return [

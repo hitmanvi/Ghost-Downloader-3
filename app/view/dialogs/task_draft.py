@@ -3,20 +3,21 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QEvent, QPoint, Qt, QTimer
+from PySide6.QtCore import QEvent, QPoint, QSize, Qt, QTimer
 from PySide6.QtGui import QColor, QTextCursor, QTextOption
-from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QHBoxLayout, QSizePolicy, QVBoxLayout
+from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QHBoxLayout, QVBoxLayout
 from qframelesswindow import FramelessDialog
 from qfluentwidgets import (
-    FluentIcon, FluentStyleSheet, FluentTitleBar,
+    BodyLabel, FluentIcon, FluentStyleSheet, FluentTitleBar,
     IndeterminateProgressBar, InfoBar, InfoBarIcon, InfoBarPosition,
-    MessageBoxBase, PrimarySplitPushButton, PushButton, SubtitleLabel,
-    ToolTipFilter,
+    MessageBoxBase, PushButton, SubtitleLabel, TransparentPushButton, TransparentTogglePushButton,
+    isDarkTheme, qconfig, setCustomStyleSheet,
 )
 
 from app.config.cfg import cfg
 from app.view.cards.draft_cards import FailedDraftCard
-from app.view.components.card_groups import DraftCardGroup, OptionCardGroup
+from app.view.components.card_groups import DraftCardGroup
+from app.view.components.control_sizes import CONTROL_HEIGHT, CONTROL_ICON_SIZE
 from app.view.components.editors import AutoSizingEdit, addRecentFolder
 from app.view.components.option_cards import OutputFolderCard, SubworkerCountCard
 from app.i18n import toLocalizedError
@@ -75,12 +76,15 @@ class TaskDraftDialog(MessageBoxBase):
         self._isStandalone = False
         self._dragPos = QPoint()
         self.titleLabel = SubtitleLabel(self.tr("添加任务"), self)
-        self.urlEdit = AutoSizingEdit(self)
+        self.urlEdit = AutoSizingEdit(self, minimumVisibleLines=3, maximumVisibleLines=5)
         self.progressBar = IndeterminateProgressBar(self)
         self.draftGroup = DraftCardGroup(self)
-        self.optionGroup = OptionCardGroup(self)
-        self.batchButton = PushButton(FluentIcon.COPY, self.tr("批量添加"), self)
-        self.importButton = PushButton(FluentIcon.FOLDER_ADD, self.tr("导入文件"), self)
+        self.folderCard = OutputFolderCard(self)
+        self.threadCard = SubworkerCountCard(self)
+        self.advancedButton = TransparentTogglePushButton(FluentIcon.SETTING, self.tr("高级选项"), self.buttonGroup)
+        self.laterButton = PushButton(self.tr("稍后下载"), self.buttonGroup)
+        self.batchButton = TransparentPushButton(FluentIcon.COPY, self.tr("批量添加"), self)
+        self.importButton = TransparentPushButton(FluentIcon.FOLDER_ADD, self.tr("导入文件"), self)
         self.headerLayout = QHBoxLayout()
 
         self._initWidget()
@@ -93,32 +97,37 @@ class TaskDraftDialog(MessageBoxBase):
 
     def _initWidget(self) -> None:
         self.hide()
-        self.widget.setFixedWidth(700)
-        self.urlEdit.setPlaceholderText(self.tr("添加多个下载链接时，请确保每行只有一个下载链接"))
+        self.widget.setFixedWidth(640)
+        self.urlEdit.setPlaceholderText(self.tr("粘贴下载链接，每行一个"))
         self.urlEdit.setWordWrapMode(QTextOption.WrapMode.NoWrap)
         self.progressBar.hide()
         self._fileTypes = self._featureService.fileTypes()
         self.importButton.setVisible(bool(self._fileTypes))
 
-        self.buttonLayout.removeWidget(self.yesButton)
-        self.yesButton.hide()
-        self.yesButton.deleteLater()
-        self.yesButton = None
-        self.downloadButton = PrimarySplitPushButton(self.tr("下载"), self.buttonGroup)
-        self.downloadButton.setDropIcon(FluentIcon.HISTORY)
-        self.downloadButton.dropButton.setToolTip(self.tr("稍后下载"))
-        self.downloadButton.dropButton.installEventFilter(ToolTipFilter(self.downloadButton.dropButton))
-        self.downloadButton.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.downloadButton.button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.downloadButton.hBoxLayout.setAlignment(self.downloadButton.button, Qt.AlignmentFlag(0))
-        self.buttonLayout.insertWidget(0, self.downloadButton, 1, Qt.AlignmentFlag.AlignVCenter)
+        self.draftGroup.hide()
+        self.threadCard.hide()
+        self.yesButton.setText(self.tr("下载"))
         self.cancelButton.setText(self.tr("取消"))
-
-        self.optionGroup.addCard(OutputFolderCard(self.optionGroup))
-        self.optionGroup.addCard(SubworkerCountCard(self.optionGroup))
+        self.buttonGroup.setFixedHeight(56)
+        for button in (self.batchButton, self.importButton, self.advancedButton,
+                       self.cancelButton, self.laterButton, self.yesButton):
+            button.setFixedHeight(CONTROL_HEIGHT)
+            button.setIconSize(QSize(CONTROL_ICON_SIZE, CONTROL_ICON_SIZE))
+        self.urlEdit.setAccessibleName(self.tr("下载链接"))
+        self.folderCard.layout().setContentsMargins(0, 4, 0, 4)
+        self.threadCard.layout().setContentsMargins(0, 4, 0, 4)
+        setCustomStyleSheet(self.urlEdit, "PlainTextEdit { background: #f5f8fd; }",
+                            "PlainTextEdit { background: #1e2a3b; }")
+        setCustomStyleSheet(self.yesButton, "PrimaryPushButton { background: #185ed9; color: white; }",
+                            "PrimaryPushButton { background: #2465d9; color: white; }")
+        self._refreshTheme()
 
     def _initLayout(self) -> None:
-        self.headerLayout.addWidget(self.titleLabel)
+        self.viewLayout.setContentsMargins(24, 18, 24, 12)
+        self.viewLayout.setSpacing(8)
+        self.viewLayout.addWidget(self.titleLabel)
+        self.headerLayout.setSpacing(6)
+        self.headerLayout.addWidget(BodyLabel(self.tr("下载链接"), self))
         self.headerLayout.addStretch(1)
         self.headerLayout.addWidget(self.batchButton)
         self.headerLayout.addWidget(self.importButton)
@@ -126,7 +135,17 @@ class TaskDraftDialog(MessageBoxBase):
         self.viewLayout.addWidget(self.urlEdit)
         self.viewLayout.addWidget(self.progressBar)
         self.viewLayout.addWidget(self.draftGroup)
-        self.viewLayout.addWidget(self.optionGroup)
+        self.viewLayout.addWidget(self.folderCard)
+        self.viewLayout.addWidget(self.threadCard)
+        self.buttonLayout.removeWidget(self.yesButton)
+        self.buttonLayout.removeWidget(self.cancelButton)
+        self.buttonLayout.setContentsMargins(20, 8, 24, 8)
+        self.buttonLayout.setSpacing(8)
+        self.buttonLayout.addWidget(self.advancedButton)
+        self.buttonLayout.addStretch()
+        self.buttonLayout.addWidget(self.cancelButton)
+        self.buttonLayout.addWidget(self.laterButton)
+        self.buttonLayout.addWidget(self.yesButton)
 
     def _bind(self) -> None:
         self._parseTimer.setInterval(1000)
@@ -140,8 +159,9 @@ class TaskDraftDialog(MessageBoxBase):
         self._draft.itemsChanged.connect(self._onItemsChanged)
         self._draft.itemsCleared.connect(self._onCleared)
 
-        self.downloadButton.clicked.connect(self._accept)
-        self.downloadButton.dropDownClicked.connect(lambda: self._accept(autoStart=False))
+        self.laterButton.clicked.connect(self._onLaterClicked)
+        self.advancedButton.toggled.connect(self.threadCard.setVisible)
+        qconfig.themeChangedFinished.connect(self._refreshTheme)
         self.batchButton.clicked.connect(self._onBatchClicked)
         self.importButton.clicked.connect(self._onImportClicked)
 
@@ -149,7 +169,7 @@ class TaskDraftDialog(MessageBoxBase):
         from app.platform.desktop import raiseWindow
 
         if not self.isActive:
-            self.optionGroup.reset()
+            self._setDefaultOptions()
 
         if self._isStandalone and self._standaloneWrapper.isVisible():
             raiseWindow(self._standaloneWrapper)
@@ -176,7 +196,7 @@ class TaskDraftDialog(MessageBoxBase):
 
     def showMask(self) -> int:
         if not self.isActive:
-            self.optionGroup.reset()
+            self._setDefaultOptions()
         if self._isStandalone:
             self._toMask()
 
@@ -223,7 +243,7 @@ class TaskDraftDialog(MessageBoxBase):
             if self._draft.urls():
                 self.urlEdit.setPlainText("\n".join(self._draft.urls()))
                 return
-            addRecentFolder(str(self.optionGroup.options()["outputFolder"]))
+            addRecentFolder(str(self.folderCard.options()["outputFolder"]))
         else:
             self._draft.clear()
 
@@ -268,24 +288,39 @@ class TaskDraftDialog(MessageBoxBase):
     def _toStandalone(self) -> None:
         self._hBoxLayout.removeWidget(self.widget)
         self._standaloneWrapper.setContent(self.widget)
-        self.widget.setStyleSheet("#centerWidget { border: none; border-radius: 0; }")
         self.widget.show()
         self._isStandalone = True
+        self._refreshTheme()
 
     def _toMask(self) -> None:
         self._standaloneWrapper.hide()
         self._standaloneWrapper.takeContent(self.widget)
-        self.widget.setStyleSheet("")
         self._hBoxLayout.addWidget(self.widget, 1, Qt.AlignmentFlag.AlignCenter)
         self.widget.show()
         self._isStandalone = False
+        self._refreshTheme()
 
-    def _accept(self, autoStart=True) -> None:
+    def _refreshTheme(self) -> None:
+        surface, tint, line = ("#172131", "#1e2a3b", "#344052") if isDarkTheme() else (
+            "#ffffff", "#f5f8fd", "#dde3ed")
+        radius = 0 if self._isStandalone else 8
+        self.widget.setStyleSheet(f"""
+            #centerWidget {{ background: {surface}; border: 1px solid {line}; border-radius: {radius}px; }}
+            #buttonGroup {{ background: {tint}; border: none; border-top: 1px solid {line};
+                border-bottom-left-radius: {radius}px; border-bottom-right-radius: {radius}px; }}
+        """)
+
+    def _setDefaultOptions(self) -> None:
+        self.folderCard.reset()
+        self.threadCard.reset()
+        self.advancedButton.setChecked(False)
+
+    def _onLaterClicked(self) -> None:
         if self.validate():
-            self.done(QDialog.DialogCode.Accepted, autoStart=autoStart)
+            self.done(QDialog.DialogCode.Accepted, autoStart=False)
 
     def _onParseNeeded(self) -> None:
-        self._draft.setBaseOptions(self.optionGroup.options())
+        self._draft.setBaseOptions(self.folderCard.options() | self.threadCard.options())
         self._draft.setUrls(self._urls())
 
     def _onParseSucceeded(self, url: str, task: Task) -> None:
@@ -336,7 +371,7 @@ class TaskDraftDialog(MessageBoxBase):
             return
         cfg.set(cfg.downloadFolder, folder)
         addRecentFolder(folder)
-        self.optionGroup.reset()
+        self._setDefaultOptions()
         bar.close()
 
     def _onItemsChanged(self) -> None:
