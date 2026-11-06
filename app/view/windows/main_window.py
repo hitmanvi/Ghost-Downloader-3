@@ -187,8 +187,9 @@ class MainWindow(FluentWindowBase):
             page = self._createPage(pageClass)
             page.setObjectName(routeKey)
             # addSubInterface 会设这个属性，懒创建绕过了它；不设时每次切页都会重刷整个内容区的样式
-            page.setProperty("isStackedTransparent", isinstance(page, TaskPage))
-            if isinstance(page, (SettingPage, TaskPage)):
+            hasSidebar = isinstance(page, (TaskPage, SettingPage))
+            page.setProperty("isStackedTransparent", hasSidebar)
+            if hasSidebar:
                 self.sidebars.addWidget(page.sidebar)
             self.stackedWidget.addWidget(page)
             self._pages[routeKey] = page
@@ -695,7 +696,7 @@ class MainWindow(FluentWindowBase):
         else:
             super().paintEvent(e)
 
-        if isinstance(self.stackedWidget.currentWidget(), TaskPage):
+        if self.stackedWidget.property("isTransparent"):
             # 标题栏单独覆盖在页面上，实色底须从窗口顶部开始绘制。
             panel = self.stackedWidget.geometry()
             panel.setTop(0)
