@@ -189,7 +189,7 @@ class TaskPage(QWidget):
         self.toolBar = QWidget(self)
         self.heading = SubtitleLabel(self.filterButtons[FilterMode.ALL].text(), self)
         self.newButton = PrimaryPushButton(FluentIcon.ADD, self.tr("新建任务"), self)
-        self.countLabel = CaptionLabel(self.toolBar)
+        self.countLabel = CaptionLabel(self)
         self.moreButton = DropDownToolButton(FluentIcon.MORE, self.toolBar)
         self.moreMenu = RoundMenu(parent=self.moreButton)
         self.startAllAction = Action(FluentIcon.PLAY, self.tr("全部开始"), self)
@@ -203,10 +203,11 @@ class TaskPage(QWidget):
 
         self.firstTask = QWidget(self)
         self.urlEdit = PlainTextEdit(self.firstTask)
-        self.urlEdit.setPlaceholderText(self.tr("下载链接"))
-        self.urlEdit.setFixedHeight(64)
+        self.urlEdit.setPlaceholderText(self.tr("输入下载链接，每行一个"))
+        self.urlEdit.setFixedHeight(88)
         self.urlEdit.setAcceptDrops(False)
-        self.pasteButton = PrimaryPushButton(FluentIcon.PASTE, self.tr("粘贴链接"), self.firstTask)
+        self.pasteButton = PushButton(FluentIcon.PASTE, self.tr("粘贴链接"), self.firstTask)
+        self.addButton = PrimaryPushButton(FluentIcon.ADD, self.tr("新建任务"), self.firstTask)
 
         # sort menu
         self.sortMenu = CheckableMenu(parent=self, indicatorType=MenuIndicatorType.RADIO)
@@ -268,7 +269,7 @@ class TaskPage(QWidget):
         self.categoryFilterButton.setVisible(cfg.isCategoryEnabled.value)
         self.categoryFilterButton.setToolTip(self.tr("按分类筛选"))
         self._onSpeedLimitChanged()
-        for button in (self.pasteButton, self.newButton):
+        for button in (self.addButton, self.newButton):
             setCustomStyleSheet(button, "PrimaryPushButton { background-color: #145da6; color: white; }",
                                 "PrimaryPushButton { background-color: #8dc2ff; color: #102d45; }")
         setCustomStyleSheet(self.urlEdit, "PlainTextEdit { border-left: 3px solid #167f7a; }",
@@ -281,29 +282,39 @@ class TaskPage(QWidget):
 
     def _initLayout(self) -> None:
         header = QHBoxLayout()
-        header.setContentsMargins(28, 8, 28, 4)
+        header.setContentsMargins(28, 8, 28, 8)
+        header.setSpacing(8)
         header.addWidget(self.heading)
+        header.addWidget(self.countLabel)
         header.addStretch()
+        header.addWidget(self.toolBar)
         header.addWidget(self.newButton)
 
         tools = QHBoxLayout(self.toolBar)
-        tools.setContentsMargins(28, 0, 28, 8)
-        tools.addWidget(self.countLabel)
-        tools.addStretch()
+        tools.setContentsMargins(0, 0, 0, 0)
+        tools.setSpacing(4)
         tools.addWidget(self.sortButton)
         tools.addWidget(self.categoryFilterButton)
         tools.addWidget(self.moreButton)
 
-        entry = QHBoxLayout()
-        entry.addWidget(self.urlEdit, 1)
-        entry.addWidget(self.pasteButton)
+        form = QWidget(self.firstTask)
+        form.setMaximumWidth(600)
+        fields = QVBoxLayout(form)
+        fields.setContentsMargins(0, 0, 0, 0)
+        fields.setSpacing(12)
+        fields.addWidget(SubtitleLabel(self.tr("添加第一个任务"), form))
+        fields.addWidget(self.urlEdit)
+        actions = QHBoxLayout()
+        actions.setSpacing(8)
+        actions.addWidget(self.pasteButton)
+        actions.addStretch()
+        actions.addWidget(self.addButton)
+        fields.addLayout(actions)
+        fields.addWidget(CaptionLabel(self.tr("也可以将种子文件拖入窗口"), form))
         empty = QVBoxLayout(self.firstTask)
         empty.setContentsMargins(28, 16, 28, 16)
         empty.addStretch()
-        empty.addWidget(SubtitleLabel(self.tr("添加第一个任务"), self.firstTask))
-        empty.addWidget(CaptionLabel(self.tr("粘贴链接，或将种子文件拖入窗口"), self.firstTask))
-        empty.addLayout(entry)
-        empty.addWidget(CaptionLabel(self.tr("支持一次粘贴多个链接，每行一个"), self.firstTask))
+        empty.addWidget(form)
         empty.addStretch()
 
         footerWidget = QWidget(self)
@@ -319,7 +330,6 @@ class TaskPage(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addLayout(header)
-        layout.addWidget(self.toolBar)
         layout.addWidget(self.firstTask, 1)
         layout.addWidget(self.scrollArea, 1)
         layout.addWidget(footerWidget)
@@ -345,8 +355,8 @@ class TaskPage(QWidget):
         self.scrollArea.verticalScrollBar().valueChanged.connect(self._refreshViewport)
 
         self.newButton.clicked.connect(lambda: self.urlsRequested.emit([]))
-        self.pasteButton.clicked.connect(self._onUrlsRequested)
-        self.urlEdit.textChanged.connect(self._onUrlTextChanged)
+        self.pasteButton.clicked.connect(self._onPasteClicked)
+        self.addButton.clicked.connect(self._onUrlsRequested)
         self.startAllAction.triggered.connect(self.startAll)
         self.pauseAllAction.triggered.connect(self.pauseAll)
         self.selectAction.triggered.connect(lambda: self.setSelectionMode(not self._isSelectionMode))
@@ -388,8 +398,11 @@ class TaskPage(QWidget):
 
     # ── intent methods ──
 
-    def _onUrlTextChanged(self) -> None:
-        self.pasteButton.setText(self.tr("新建任务") if self.urlEdit.toPlainText().strip() else self.tr("粘贴链接"))
+    def _onPasteClicked(self) -> None:
+        text = QApplication.clipboard().text().strip()
+        if text:
+            self.urlEdit.appendPlainText(text)
+        self.urlEdit.setFocus()
 
     def _onUrlsRequested(self) -> None:
         urls = [line.strip() for line in self.urlEdit.toPlainText().splitlines() if line.strip()]
@@ -668,6 +681,7 @@ class TaskPage(QWidget):
 
         isFirstTask = not tasks and self._filterMode == FilterMode.ALL and not self._searchText and not self._categoryFilter
         self.firstTask.setVisible(isFirstTask)
+        self.countLabel.setVisible(not isFirstTask)
         self.newButton.setVisible(not isFirstTask)
         self.toolBar.setVisible(not isFirstTask)
         self.scrollArea.setVisible(not isFirstTask)

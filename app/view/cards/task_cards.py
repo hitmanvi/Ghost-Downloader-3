@@ -21,7 +21,7 @@ from app.checksum import ALGORITHMS, COMMON_ALGORITHMS
 from app.models.task import TaskStatus, SpecialFileSize
 from app.platform.desktop import openFile, revealInFolder
 from app.platform.filesystem import isExisting, isFolder
-from app.view.components.labels import IconBodyLabel, IconStrongBodyLabel
+from app.view.components.labels import ElidedLabel, IconBodyLabel, IconStrongBodyLabel
 from app.view.components.category_settings import toCategoryName
 from app.i18n import toLocalizedError
 
@@ -58,10 +58,10 @@ class ButtonSpec:
     default: ButtonState = field(default=BUTTON_DEFAULT)
 
 
-def toEtaText(task: Task, speed: int, received: int) -> str:
+def toEtaText(task: Task, speed: int, received: int) -> str | None:
     if task.fileSize > 0 and speed > 0:
         return toReadableTime(int((task.fileSize - received) / speed))
-    return "--"
+    return None
 
 
 def toSizeText(task: Task, speed: int, received: int) -> str | None:
@@ -182,7 +182,7 @@ class TaskCard(CardWidget):
         self.checkBox = CheckBox(self)
         self.iconLabel = ImageLabel(self)
         self.nameLabel = IconStrongBodyLabel(task.name, self)
-        self.statusLabel = IconBodyLabel("", FluentIcon.INFO, self)
+        self.statusLabel = ElidedLabel(parent=self)
         self.statusLabel.hide()
 
         for f in self.infoFields:
@@ -220,7 +220,7 @@ class TaskCard(CardWidget):
         if self._task.fileSize in {SpecialFileSize.UNKNOWN, SpecialFileSize.NOT_SUPPORTED}:
             return IndeterminateProgressBar(self)
         bar = ProgressBar(self)
-        bar.setCustomBackgroundColor(QColor(0, 0, 0, 0), QColor(0, 0, 0, 0))
+        bar.setCustomBackgroundColor(QColor("#d8e8e5"), QColor("#36544f"))
         return bar
 
     def _initWidget(self) -> None:
@@ -238,6 +238,9 @@ class TaskCard(CardWidget):
 
     def _initLayout(self) -> None:
         infoLayout = QHBoxLayout()
+        infoLayout.setSpacing(8)
+        infoLayout.addWidget(self.statusLabel, 1)
+        self.statusLabel.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         transferLayout = QVBoxLayout()
         transferLayout.setContentsMargins(0, 8, 0, 8)
         transferLayout.setSpacing(0)
@@ -249,16 +252,14 @@ class TaskCard(CardWidget):
                 transferLayout.addWidget(label)
             else:
                 infoLayout.addWidget(label)
-        infoLayout.addWidget(self.statusLabel)
-        self.statusLabel.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        infoLayout.setStretchFactor(self.statusLabel, 1)
 
         contentLayout = QVBoxLayout()
-        contentLayout.setContentsMargins(2, 8, 2, 8)
+        contentLayout.setContentsMargins(0, 8, 0, 8)
+        contentLayout.setSpacing(4)
         contentLayout.addWidget(self.nameLabel)
-        contentLayout.addLayout(infoLayout)
         self.progressBar.setFixedHeight(4)
         contentLayout.addWidget(self.progressBar)
+        contentLayout.addLayout(infoLayout)
 
         self.hBoxLayout = QHBoxLayout(self)
         self.hBoxLayout.setContentsMargins(12, 0, 12, 0)
@@ -299,7 +300,7 @@ class TaskCard(CardWidget):
         for f in self.infoFields:
             label = getattr(self, f"{f.name}Label")
             formatter = f.formats.get(task.status) or f.formats.get(None)
-            if formatter is None:
+            if task.status == TaskStatus.FAILED or formatter is None:
                 label.hide()
                 continue
             text = formatter(task, speed, receivedBytes)
@@ -319,6 +320,11 @@ class TaskCard(CardWidget):
             text = self.tr("下载中 {}%").format(int(progress)) if task.fileSize > 0 else self.tr("下载中")
             self._setStatus(text)
         self._refreshForStatus(task)
+        if task.status == TaskStatus.FAILED:
+            text = (self.tr("失败：{}").format(toLocalizedError(task.lastError))
+                    if task.lastError else self.tr("下载失败"))
+            self._setStatus(text)
+            self.statusLabel.setTextColor(QColor("#a33e2d"), QColor("#ffa999"))
         self._refreshButtons()
         self.checksumButton.setVisible(checksumProgress is not None)
         self.openFileButton.setVisible(task.status == TaskStatus.COMPLETED)
@@ -363,16 +369,11 @@ class TaskCard(CardWidget):
         elif task.status == TaskStatus.FAILED:
             self.progressBar.hide()
             self.progressBar.setError(True)
-            error = task.lastError
-            if error:
-                self._setStatus(self.tr("失败：{}").format(toLocalizedError(error)))
-            else:
-                self._setStatus(self.tr("下载过程中发生错误，请稍后重试"))
-            self.statusLabel.setTextColor(QColor("#a33e2d"), QColor("#ffa999"))
 
         else:
             self.progressBar.setError(False)
             self.progressBar.pause()
+            self.progressBar.setVisible(task.status == TaskStatus.PAUSED and task.fileSize > 0)
             if task.status == TaskStatus.PAUSED:
                 self._setStatus(self.tr("任务已经暂停"))
             elif task.status == TaskStatus.WAITING:
@@ -381,7 +382,6 @@ class TaskCard(CardWidget):
     def _setStatus(self, text: str) -> None:
         if self.statusLabel.text() == text and not self.statusLabel.isHidden():
             return
-        self.statusLabel.setToolTip(text)
         self.statusLabel.setTextColor()
         self.statusLabel.setText(text)
         self.statusLabel.show()
@@ -587,7 +587,7 @@ class TaskCard(CardWidget):
 
     def mouseDoubleClickEvent(self, e) -> None:
         super().mouseDoubleClickEvent(e)
-        if e.button() == Qt.MouseButton.LeftButton:
+        if e.button() == Qt.MouseButton.LeftButton and self.openFileButton.isEnabled():
             openFile(self._task.outputPath)
 
     def contextMenuEvent(self, e) -> None:

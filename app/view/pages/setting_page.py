@@ -8,7 +8,7 @@ from PySide6.QtWidgets import QVBoxLayout, QWidget, QApplication
 from qfluentwidgets import (
     ComboBoxSettingCard, FluentIcon, HyperlinkCard, HyperlinkButton, InfoBar,
     InfoBarPosition, MessageBox, PrimaryPushSettingCard, PushButton, PushSettingCard,
-    RangeSettingCard, SubtitleLabel, SwitchSettingCard, ToolButton, ToolTipFilter,
+    RangeSettingCard, SubtitleLabel, SwitchButton, SwitchSettingCard, ToolButton, ToolTipFilter,
 )
 
 from app.view.components.sidebar import Sidebar
@@ -55,7 +55,7 @@ class SettingPage(FastScrollArea):
         self.fileGroup = CollapsibleSettingCardGroup(self.tr("文件保存"), "files", self.container, isFixed=True)
         self.queueGroup = CollapsibleSettingCardGroup(self.tr("下载队列"), "queue", self.container, isFixed=True)
 
-        self.generalGroup = CollapsibleSettingCardGroup(self.tr("综合下载设置"), "general", self.container)
+        self.generalGroup = CollapsibleSettingCardGroup(self.tr("连接与传输"), "general", self.container)
         self.categoryGroup = CollapsibleSettingCardGroup(self.tr("分类"), "category", self.container, isFixed=True)
         if sys.platform != "darwin":
             self.associationGroup = CollapsibleSettingCardGroup(self.tr("关联设置"), "association", self.container)
@@ -89,10 +89,20 @@ class SettingPage(FastScrollArea):
     def _initCards(self) -> None:
         self.speedLimitationCard = SpinBoxSettingCard(
             FluentIcon.SPEED_OFF, self.tr("下载限速"),
-            self.tr("当下载任务界面限速开关开启时，所有任务将根据此值进行限速"),
+            self.tr("所有任务共用此上限"),
             suffix=" KB/s", configItem=cfg.speedLimitation,
             singleStep=512, division=1 / 1024,
         )
+        self.speedLimitationCard.spinBox.setFixedWidth(144)
+        self.speedLimitationCard.spinBox.setKeyboardTracking(False)
+        self.speedLimitSwitch = SwitchButton(self.speedLimitationCard)
+        self.speedLimitSwitch.setAccessibleName(self.tr("启用下载限速"))
+        self.speedLimitSwitch.setOnText("")
+        self.speedLimitSwitch.setOffText("")
+        self.speedLimitSwitch.setChecked(cfg.isSpeedLimitEnabled.value)
+        self.speedLimitationCard.spinBox.setEnabled(cfg.isSpeedLimitEnabled.value)
+        limitLayout = self.speedLimitationCard.hBoxLayout
+        limitLayout.insertWidget(limitLayout.indexOf(self.speedLimitationCard.spinBox), self.speedLimitSwitch)
         from qfluentwidgets import SettingCard
         self.downloadFolderCard = SettingCard(FluentIcon.FOLDER, self.tr("默认保存位置"))
         self.downloadFolderPicker = FolderPicker(
@@ -104,10 +114,6 @@ class SettingPage(FastScrollArea):
         self.downloadFolderCard.hBoxLayout.addSpacing(16)
         self.clientProfileCard = IdentitySettingCard()
 
-        self.downloadFolderPicker.setObjectName("defaultFolder")
-        self.downloadFolderPicker.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
-        self.downloadFolderPicker.setStyleSheet(
-            "#defaultFolder { background: rgba(54, 164, 158, 28); border-radius: 8px; padding: 4px; }")
         self.fileGroup.addSettingCards([
             self.downloadFolderCard,
             ComboBoxSettingCard(cfg.nameConflict, FluentIcon.COPY, self.tr("同名文件"),
@@ -118,7 +124,7 @@ class SettingPage(FastScrollArea):
                                       configItem=cfg.maxTaskNum, singleStep=1)
         queueCard.spinBox.setFixedWidth(96)
         queueCard.spinBox.valueChanged.connect(lambda value: cfg.set(cfg.maxTaskNum, value))
-        self.queueGroup.addSettingCard(queueCard)
+        self.queueGroup.addSettingCards([queueCard, self.speedLimitationCard])
         self.generalGroup.addSettingCards([
             RangeSettingCard(cfg.preBlockNum, FluentIcon.CLOUD, self.tr("预分配线程数"),
                              self.tr("线程越多，下载越快。线程数大于 64 时，有触发反爬导致文件损坏的风险")),
@@ -128,7 +134,6 @@ class SettingPage(FastScrollArea):
             SpinBoxSettingCard(FluentIcon.LIBRARY, self.tr("最小再分配大小"),
                               self.tr("每线程剩余量大于此值时, 有线程完成或自动提速条件满足会触发重新分配"),
                               " KB", cfg.maxReassignSize, singleStep=64),
-            self.speedLimitationCard,
             SwitchSettingCard(FluentIcon.HISTORY, self.tr("保留文件修改时间"),
                               self.tr("下载完成后将文件的修改时间设为服务器提供的 Last-Modified 值"),
                               cfg.shouldPreserveLastModified),
@@ -403,7 +408,8 @@ class SettingPage(FastScrollArea):
         packs.addSettingCard(self.packInfoCard)
         packGroups = [packs, *self._featureService.settingGroups(self.container)]
         for key, name, icon, groups in (
-            ("files", self.tr("下载与文件"), FluentIcon.FOLDER, [self.fileGroup, self.queueGroup, self.categoryGroup]),
+            ("files", self.tr("常用设置"), FluentIcon.SETTING, [self.fileGroup, self.queueGroup]),
+            ("category", self.tr("文件分类"), FluentIcon.TAG, [self.categoryGroup]),
             ("browser", self.tr("浏览器与外部工具"), FluentIcon.LINK, integrationGroups),
             ("appearance", self.tr("外观与行为"), FluentIcon.BRUSH, [self.personalGroup, self.softwareGroup, self.aboutGroup]),
             ("sites", self.tr("站点与协议"), FluentIcon.GLOBE, packGroups),
@@ -438,6 +444,10 @@ class SettingPage(FastScrollArea):
         for key, button in self.sectionButtons.items():
             button.clicked.connect(lambda _, key=key: self.setSection(key))
         cfg.isCategoryEnabled.valueChanged.connect(lambda _: self.setSearchText(self._searchText))
+        self.speedLimitSwitch.checkedChanged.connect(lambda enabled: cfg.set(cfg.isSpeedLimitEnabled, enabled))
+        cfg.isSpeedLimitEnabled.valueChanged.connect(self.speedLimitSwitch.setChecked)
+        cfg.isSpeedLimitEnabled.valueChanged.connect(self.speedLimitationCard.spinBox.setEnabled)
+        self.speedLimitationCard.spinBox.valueChanged.connect(lambda value: cfg.set(cfg.speedLimitation, value * 1024))
         cfg.appRestartSig.connect(self._showRestartTooltip)
         cfg.browserExtensionPairToken.valueChanged.connect(self._refreshPairTokenCard)
         self._browserService.connectionChanged.connect(self._refreshBrowserStatus, owner=self)

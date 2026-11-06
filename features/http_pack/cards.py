@@ -75,17 +75,19 @@ class SegmentedProgressBar(QWidget):
 
     def paintEvent(self, event: QPaintEvent):
         fileSize = self._step.fileSize
-        if fileSize <= 0 or not self._spans:
+        if fileSize <= 0:
             return
 
         painter = QPainter(self)
         painter.setRenderHints(QPainter.RenderHint.Antialiasing)
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(self.barColor())
 
         width = self.width()
         height = self.height()
         radius = height / 2
+        painter.setBrush(QColor("#36544f" if isDarkTheme() else "#d8e8e5"))
+        painter.drawRoundedRect(QRectF(self.rect()), radius, radius)
+        painter.setBrush(self.barColor())
         for start, end in self._spans:
             x = start / fileSize * width
             w = (end - start) / fileSize * width
