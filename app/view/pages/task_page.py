@@ -230,6 +230,7 @@ class TaskPage(QWidget):
 
     def _initWidget(self) -> None:
         self.setObjectName("TaskPage")
+        self.scrollWidget.setObjectName("taskListSurface")
         self.scrollArea.setWidget(self.scrollWidget)
         self.scrollArea.setWidgetResizable(True)
         self.scrollArea.enableTransparentBackground()
@@ -603,6 +604,7 @@ class TaskPage(QWidget):
         """)
         retryInk, retryFill = ("#ffb5a4", "#512e2a") if isDarkTheme() else ("#923a29", "#fff1eb")
         self.scrollWidget.setStyleSheet(f"""
+            #taskListSurface {{ background: transparent; }}
             #rowAction {{ font-size: 12px; padding: 0 5px; color: {ink}; background: transparent;
                 border: 1px solid {line}; border-radius: 4px; }}
             #rowAction[failed="true"] {{ color: {retryInk}; background: {retryFill}; }}
