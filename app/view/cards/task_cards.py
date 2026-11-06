@@ -6,10 +6,10 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QFileInfo, QPoint, QRect, QRectF, Signal, Qt, QT_TRANSLATE_NOOP as N
-from PySide6.QtGui import QColor, QIcon, QPainter
+from PySide6.QtGui import QColor, QIcon, QLinearGradient, QPainter
 from PySide6.QtWidgets import QFileIconProvider, QHBoxLayout, QLabel, QVBoxLayout, QApplication, QWidget, QSizePolicy
 from qfluentwidgets import (
-    Action, CardWidget, CheckBox, FluentIcon, ImageLabel,
+    Action, CardWidget, CheckBox, FluentIcon, Theme,
     IndeterminateProgressBar, PushButton, ProgressBar, ProgressRing,
     RoundMenu, ToolButton, ToolTipFilter, TransparentToolButton,
     isDarkTheme, setCustomStyleSheet, themeColor,
@@ -65,11 +65,19 @@ def toEtaText(task: Task, speed: int, received: int) -> str | None:
 
 
 def toSizeText(task: Task, speed: int, received: int) -> str | None:
-    if task.status == TaskStatus.COMPLETED:
-        return toReadableSize(task.fileSize) if task.fileSize > 0 else None
     if task.fileSize > 0:
-        return f"{toReadableSize(received)}/{toReadableSize(task.fileSize)}"
-    return f"{toReadableSize(received)}/--"
+        return toReadableSize(task.fileSize)
+    return toReadableSize(received) if received > 0 else None
+
+
+class TaskProgressBar(ProgressBar):
+    def barColor(self):
+        if self.isPaused() or self.isError():
+            return super().barColor()
+        gradient = QLinearGradient(0, 0, max(1, self.width() * self.val / 100), 0)
+        gradient.setColorAt(0, QColor("#5394ff" if isDarkTheme() else "#367cf8"))
+        gradient.setColorAt(1, QColor("#43cff4" if isDarkTheme() else "#13b9eb"))
+        return gradient
 
 
 SPEED_FIELD = FieldSpec("speed", FluentIcon.SPEED_HIGH, {
@@ -144,6 +152,12 @@ DELETE_BUTTON = ButtonSpec("delete", FluentIcon.CLOSE, N("TaskCard", "删除"), 
 
 class TaskCard(CardWidget):
     ROW_HEIGHT = 80
+    NAME_STRETCH = 13
+    STATUS_STRETCH = 10
+    SIZE_WIDTH = 80
+    ACTION_WIDTH = 136
+    COLUMN_MARGIN = 12
+    COLUMN_GAP = 12
     selectionChanged = Signal(bool, bool)
     dragRequested = Signal(str)
 
@@ -154,9 +168,9 @@ class TaskCard(CardWidget):
         OPEN_FILE_BUTTON, OPEN_FOLDER_BUTTON, DELETE_BUTTON,
     ]
 
-    speedLabel: IconBodyLabel
-    etaLabel: IconBodyLabel
-    sizeLabel: IconBodyLabel
+    speedLabel: ElidedLabel
+    etaLabel: ElidedLabel
+    sizeLabel: ElidedLabel
     toggleButton: PushButton
     selectFilesButton: ToolButton
     checksumButton: ChecksumButton
@@ -180,13 +194,18 @@ class TaskCard(CardWidget):
         self.setFixedHeight(self.ROW_HEIGHT)
 
         self.checkBox = CheckBox(self)
-        self.iconLabel = ImageLabel(self)
+        self.iconLabel = QLabel(self)
+        self.iconLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.nameLabel = IconStrongBodyLabel(task.name, self)
         self.statusLabel = ElidedLabel(parent=self)
         self.statusLabel.hide()
+        self.reasonLabel = ElidedLabel(parent=self)
+        self.reasonLabel.hide()
 
         for f in self.infoFields:
-            setattr(self, f"{f.name}Label", IconBodyLabel("", f.icon, self))
+            label = (ElidedLabel(parent=self) if f.name in {"size", "eta", "speed"}
+                     else IconBodyLabel("", f.icon, self))
+            setattr(self, f"{f.name}Label", label)
 
         self.moreButton = TransparentToolButton(FluentIcon.MORE, self)
         self.moreButton.setAccessibleName(self.tr("更多任务操作"))
@@ -205,12 +224,11 @@ class TaskCard(CardWidget):
         self.progressBar = self._createProgressBar()
 
         if isinstance(self.progressBar, (ProgressBar, IndeterminateProgressBar)):
-            self.progressBar.setCustomBarColor(QColor("#09887d"), QColor("#56cdb9"))
+            self.progressBar.setCustomBarColor(QColor("#367cf8"), QColor("#5394ff"))
         self._initWidget()
         self._initLayout()
         self._bind()
         self._refreshIcon()
-        self._refreshCategoryIcon()
 
     @property
     def task(self) -> Task:
@@ -219,8 +237,8 @@ class TaskCard(CardWidget):
     def _createProgressBar(self) -> QWidget:
         if self._task.fileSize in {SpecialFileSize.UNKNOWN, SpecialFileSize.NOT_SUPPORTED}:
             return IndeterminateProgressBar(self)
-        bar = ProgressBar(self)
-        bar.setCustomBackgroundColor(QColor("#d8e8e5"), QColor("#36544f"))
+        bar = TaskProgressBar(self)
+        bar.setCustomBackgroundColor(QColor("#e3eaf6"), QColor("#34445b"))
         return bar
 
     def _initWidget(self) -> None:
@@ -230,6 +248,7 @@ class TaskCard(CardWidget):
         self.checkBox.setFixedSize(23, 23)
         self.checkBox.setVisible(False)
         self.nameLabel.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.reasonLabel.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         for spec in self.buttons:
             if spec.tooltip:
                 button = getattr(self, f"{spec.name}Button")
@@ -237,40 +256,61 @@ class TaskCard(CardWidget):
                 button.installEventFilter(ToolTipFilter(button))
 
     def _initLayout(self) -> None:
-        infoLayout = QHBoxLayout()
-        infoLayout.setSpacing(8)
-        infoLayout.addWidget(self.statusLabel, 1)
+        identity = QHBoxLayout()
+        identity.setSpacing(8)
+        identity.addWidget(self.checkBox)
+        identity.addWidget(self.iconLabel)
+        names = QVBoxLayout()
+        names.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+        names.setSpacing(2)
+        names.addWidget(self.nameLabel)
+        identity.addLayout(names, 1)
+
+        sizeColumn = QWidget(self)
+        sizeColumn.setFixedWidth(self.SIZE_WIDTH)
+        sizes = QVBoxLayout(sizeColumn)
+        sizes.setContentsMargins(0, 0, 0, 0)
+        transfer = QVBoxLayout()
+        transfer.setSpacing(4)
+        transfer.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+        status = QHBoxLayout()
+        status.setSpacing(4)
+        status.addWidget(self.statusLabel, 1)
         self.statusLabel.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        transferLayout = QVBoxLayout()
-        transferLayout.setContentsMargins(0, 8, 0, 8)
-        transferLayout.setSpacing(0)
+        transfer.addLayout(status)
+        self.progressBar.setFixedHeight(4)
+        transfer.addWidget(self.progressBar)
+        transfer.addWidget(self.reasonLabel)
+        details = QHBoxLayout()
+        details.setSpacing(8)
+        names.addLayout(details)
         for f in self.infoFields:
             label = getattr(self, f"{f.name}Label")
-            if f.name in {"speed", "eta"}:
+            if f.name == "size":
+                sizes.addWidget(label)
+            elif f.name == "speed":
                 label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-                label.setMinimumWidth(92)
-                transferLayout.addWidget(label)
+                status.addWidget(label)
+            elif f.name == "eta":
+                transfer.addWidget(label)
             else:
-                infoLayout.addWidget(label)
+                details.addWidget(label)
 
-        contentLayout = QVBoxLayout()
-        contentLayout.setContentsMargins(0, 8, 0, 8)
-        contentLayout.setSpacing(4)
-        contentLayout.addWidget(self.nameLabel)
-        self.progressBar.setFixedHeight(4)
-        contentLayout.addWidget(self.progressBar)
-        contentLayout.addLayout(infoLayout)
-
+        actions = QWidget(self)
+        actions.setFixedWidth(self.ACTION_WIDTH)
+        buttons = QHBoxLayout(actions)
+        buttons.setContentsMargins(0, 0, 0, 0)
+        buttons.setSpacing(2)
+        buttons.addStretch()
+        for button in (self.checksumButton, self.openFileButton, self.toggleButton, self.moreButton):
+            buttons.addWidget(button)
         self.hBoxLayout = QHBoxLayout(self)
-        self.hBoxLayout.setContentsMargins(12, 0, 12, 0)
-        self.hBoxLayout.addWidget(self.checkBox)
-        self.hBoxLayout.addWidget(self.iconLabel)
-        self.hBoxLayout.addLayout(contentLayout, 1)
-        self.hBoxLayout.addLayout(transferLayout)
-        self.hBoxLayout.addWidget(self.checksumButton)
-        self.hBoxLayout.addWidget(self.openFileButton)
-        self.hBoxLayout.addWidget(self.toggleButton)
-        self.hBoxLayout.addWidget(self.moreButton)
+        self.hBoxLayout.setContentsMargins(self.COLUMN_MARGIN, 0, self.COLUMN_MARGIN, 0)
+        self.hBoxLayout.setSpacing(self.COLUMN_GAP)
+        self.hBoxLayout.addLayout(identity, self.NAME_STRETCH)
+        self.hBoxLayout.addWidget(sizeColumn)
+        self.hBoxLayout.addLayout(transfer, self.STATUS_STRETCH)
+        self.hBoxLayout.addWidget(actions)
         self.openFileButton.setText(self.tr("打开文件"))
 
     def _bind(self) -> None:
@@ -282,8 +322,7 @@ class TaskCard(CardWidget):
         self.deleteButton.clicked.connect(self._onDeleteClicked)
         self.checkBox.clicked.connect(lambda checked: self.selectionChanged.emit(checked, False))
         self.selectFilesButton.clicked.connect(self._onSelectFilesClicked)
-        cfg.isCategoryEnabled.valueChanged.connect(self._refreshCategoryIcon)
-        self._categoryService.categoriesChanged.connect(self._refreshCategoryIcon, owner=self)
+        self._categoryService.categoriesChanged.connect(self._refreshIcon, owner=self)
 
     def refresh(self, force: bool = False) -> None:
         checksumProgress = self._taskService.checksumProgress(self._task)
@@ -300,14 +339,14 @@ class TaskCard(CardWidget):
         for f in self.infoFields:
             label = getattr(self, f"{f.name}Label")
             formatter = f.formats.get(task.status) or f.formats.get(None)
-            if task.status == TaskStatus.FAILED or formatter is None:
+            if (task.status == TaskStatus.FAILED and f.name != "size") or formatter is None:
                 label.hide()
                 continue
             text = formatter(task, speed, receivedBytes)
             if text is None:
                 label.hide()
             else:
-                label.setText(text)
+                label.setText(self.tr("剩余 {}").format(text) if f is ETA_FIELD else text)
                 label.show()
 
         nameFormatter = self.nameFormats.get(task.status)
@@ -317,18 +356,24 @@ class TaskCard(CardWidget):
                 self.nameLabel.setText(text)
 
         if task.status == TaskStatus.RUNNING:
-            text = self.tr("下载中 {}%").format(int(progress)) if task.fileSize > 0 else self.tr("下载中")
+            text = f"{int(progress)}%" if task.fileSize > 0 else self.tr("下载中")
             self._setStatus(text)
         self._refreshForStatus(task)
+        hasReason = task.status == TaskStatus.FAILED and task.lastError is not None
+        self.reasonLabel.setVisible(hasReason)
+        if hasReason:
+            self.reasonLabel.setText(toLocalizedError(task.lastError))
         if task.status == TaskStatus.FAILED:
-            text = (self.tr("失败：{}").format(toLocalizedError(task.lastError))
-                    if task.lastError else self.tr("下载失败"))
-            self._setStatus(text)
-            self.statusLabel.setTextColor(QColor("#a33e2d"), QColor("#ffa999"))
+            self._setStatus(self.tr("下载失败"))
+            self.statusLabel.setTextColor(QColor("#b33f32"), QColor("#ffaaa2"))
+        elif task.status == TaskStatus.RUNNING and task.fileSize > 0 and self.statusLabel.text().endswith("%"):
+            self.statusLabel.setTextColor(QColor("#1c60d7"), QColor("#8bb7ff"))
         self._refreshButtons()
         self.checksumButton.setVisible(checksumProgress is not None)
         self.openFileButton.setVisible(task.status == TaskStatus.COMPLETED)
         self.toggleButton.setVisible(task.status != TaskStatus.COMPLETED or task.canSeed)
+        if task.status == TaskStatus.COMPLETED:
+            self.openFileButton.setText("" if task.canSeed or checksumProgress is not None else self.tr("打开文件"))
         if self._lastStatus != task.status or task.status == TaskStatus.COMPLETED:
             label = {
                 TaskStatus.RUNNING: self.tr("暂停"), TaskStatus.FAILED: self.tr("重试"),
@@ -336,7 +381,8 @@ class TaskCard(CardWidget):
                 TaskStatus.COMPLETED: self.tr("停止做种") if task.isSeeding else self.tr("做种"),
             }[task.status]
             if isinstance(self.toggleButton, PushButton):
-                self.toggleButton.setText(label)
+                self.toggleButton.setText("" if task.status == TaskStatus.COMPLETED else label)
+                self.toggleButton.setToolTip(label)
             if self._lastStatus != task.status:
                 isFailed = task.status == TaskStatus.FAILED
                 setCustomStyleSheet(self.toggleButton,
@@ -387,18 +433,17 @@ class TaskCard(CardWidget):
         self.statusLabel.show()
 
     def _refreshIcon(self) -> None:
-        self.iconLabel.setPixmap(QFileIconProvider().icon(QFileInfo(self._task.outputPath)).pixmap(32, 32))
-        self.iconLabel.setFixedSize(32, 32)
-
-    def _refreshCategoryIcon(self) -> None:
-        if not cfg.isCategoryEnabled.value or not self._task.category:
-            self.nameLabel.setIcon(None)
-            return
-        category = self._categoryService.categoryById(self._task.category)
+        categoryId = self._categoryService.categoryOf(self._task)
+        category = self._categoryService.categoryById(categoryId)
         if category is None:
-            self.nameLabel.setIcon(None)
+            self.iconLabel.setStyleSheet("")
+            self.iconLabel.setPixmap(QFileIconProvider().icon(QFileInfo(self._task.outputPath)).pixmap(32, 32))
             return
-        self.nameLabel.setIcon(getattr(FluentIcon, category.icon, FluentIcon.TAG))
+        icon = getattr(FluentIcon, category.icon, FluentIcon.DOCUMENT)
+        color = {"VIDEO": "#5079dc", "ZIP_FOLDER": "#b57b24", "DOCUMENT": "#4c947a",
+                 "MUSIC": "#9569b6", "PHOTO": "#438990"}.get(category.icon, "#687d99")
+        self.iconLabel.setStyleSheet(f"background: {color}; border-radius: 6px;")
+        self.iconLabel.setPixmap(icon.icon(Theme.DARK).pixmap(18, 18))
 
     def _refreshButtons(self, names=None) -> None:
         for spec in self.buttons:
@@ -554,8 +599,8 @@ class TaskCard(CardWidget):
     def _matchInfoText(self, pos: QPoint) -> bool:
         if self._isSelectionMode:
             return False
-        labels = [getattr(self, f"{f.name}Label") for f in self.infoFields] + [self.statusLabel]
-        return any(label.isVisible() and label.geometry().contains(pos) for label in labels)
+        labels = [getattr(self, f"{f.name}Label") for f in self.infoFields] + [self.statusLabel, self.reasonLabel]
+        return any(label.isVisible() and label.rect().contains(label.mapFrom(self, pos)) for label in labels)
 
     def mouseMoveEvent(self, e) -> None:
         if not e.buttons():

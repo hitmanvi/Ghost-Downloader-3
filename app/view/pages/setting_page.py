@@ -4,7 +4,7 @@ import sys
 
 from PySide6.QtCore import Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import QVBoxLayout, QWidget, QApplication
+from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget, QApplication
 from qfluentwidgets import (
     ComboBoxSettingCard, FluentIcon, HyperlinkCard, HyperlinkButton, InfoBar,
     InfoBarPosition, MessageBox, PrimaryPushSettingCard, PushButton, PushSettingCard,
@@ -48,7 +48,12 @@ class SettingPage(FastScrollArea):
         self.vBoxLayout = QVBoxLayout(self.container)
         self.sidebar = Sidebar(self.tr("设置"), self)
         self.heading = SubtitleLabel(self.container)
-        self.vBoxLayout.addWidget(self.heading)
+        header = QHBoxLayout()
+        header.addWidget(self.heading)
+        header.addStretch()
+        self.searchLayout = QHBoxLayout()
+        header.addLayout(self.searchLayout)
+        self.vBoxLayout.addLayout(header)
         self.sections = {}
         self.sectionButtons = {}
         self._section = "files"
@@ -421,7 +426,7 @@ class SettingPage(FastScrollArea):
             section = QWidget(self.container)
             layout = QVBoxLayout(section)
             layout.setContentsMargins(0, 0, 0, 0)
-            layout.setSpacing(12)
+            layout.setSpacing(24 if key == "files" else 12)
             order = cfg.settingGroupOrder.value
             if key != "files":
                 groups = sorted(groups, key=lambda g: order.index(g.objectName()) if g.objectName() in order else len(order))

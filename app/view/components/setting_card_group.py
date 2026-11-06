@@ -155,7 +155,7 @@ class CollapsibleSettingCardGroup(CardWidget):
         self.expandButton.setAngle(0 if self._collapsed else 180)
 
     def _initLayout(self) -> None:
-        self.headerLayout.setContentsMargins(16, 10, 8, 10)
+        self.headerLayout.setContentsMargins(4 if self._isFixed else 16, 8, 8, 8)
         self.headerLayout.setSpacing(4)
         self.headerLayout.addWidget(self.titleLabel)
         self.headerLayout.addStretch(1)
@@ -181,6 +181,12 @@ class CollapsibleSettingCardGroup(CardWidget):
 
     def addSettingCard(self, card: SettingCard) -> None:
         self.cardLayout.addWidget(card)
+        if self._isFixed and isinstance(card, SettingCard):
+            card.iconLabel.hide()
+            card.hBoxLayout.setContentsMargins(4, 0, 0, 0)
+            gap = card.hBoxLayout.itemAt(card.hBoxLayout.indexOf(card.iconLabel) + 1).spacerItem()
+            if gap is not None:
+                gap.changeSize(0, 0)
         targets: list[QWidget] = [card]
         if isinstance(card, CollapsibleSettingCard):
             targets += card.findChildren(SettingCard)
@@ -220,10 +226,18 @@ class CollapsibleSettingCardGroup(CardWidget):
         super().mousePressEvent(event)
 
     def paintEvent(self, event) -> None:
-        super().paintEvent(event)
+        if not self._isFixed:
+            super().paintEvent(event)
         if self.cardContainer.height() > 0:
             with QPainter(self) as painter:
-                painter.fillRect(1, self.cardContainer.y() - 1, self.width() - 2, 1, QColor(0, 0, 0, 96 if isDarkTheme() else 24))
+                line = QColor("#344052" if isDarkTheme() else "#dde3ed")
+                painter.fillRect(0, self.cardContainer.y() - 1, self.width(), 1, line)
+                if self._isFixed:
+                    for index in range(self.cardLayout.count()):
+                        card = self.cardLayout.itemAt(index).widget()
+                        if not card.isHidden():
+                            y = self.cardContainer.y() + card.geometry().bottom()
+                            painter.fillRect(0, y, self.width(), 1, line)
 
     def enterEvent(self, event) -> None:
         super().enterEvent(event)

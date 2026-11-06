@@ -151,7 +151,7 @@ class MainWindow(FluentWindowBase):
         self._dropOverlay = DropOverlay(self)
 
     def _initLayout(self) -> None:
-        self.sidebars.setFixedWidth(184)
+        self.sidebars.setFixedWidth(196)
         self.hBoxLayout.addWidget(self.sidebars)
         content = QVBoxLayout()
         content.setContentsMargins(0, self.titleBar.height(), 0, 0)
@@ -254,6 +254,11 @@ class MainWindow(FluentWindowBase):
         self.searchEdit.clear()
         if hasattr(page, 'searchPlaceholder'):
             self.searchEdit.setPlaceholderText(page.searchPlaceholder)
+            if isinstance(page, (TaskPage, SettingPage)):
+                page.searchLayout.addWidget(self.searchEdit)
+                self.searchEdit.setFixedWidth(160)
+            elif self.searchEdit.parentWidget() is not self.titleBar:
+                self.searchEdit.setParent(self.titleBar)
             if hasattr(page, "setSearchText"):
                 page.setSearchText("")
             self.searchEdit.show()
@@ -263,6 +268,8 @@ class MainWindow(FluentWindowBase):
 
     def _refreshSearchEditGeometry(self) -> None:
         tb = self.titleBar
+        if self.searchEdit.parentWidget() is not tb:
+            return
         w = min(248, tb.width() - 300)
         w = max(200, w)
         self.searchEdit.setFixedWidth(w)
@@ -701,7 +708,7 @@ class MainWindow(FluentWindowBase):
             panel = self.stackedWidget.geometry()
             panel.setTop(0)
             with QPainter(self) as painter:
-                painter.fillRect(panel, QColor("#142733" if isDarkTheme() else "#f9fafb"))
+                painter.fillRect(panel, QColor("#172131" if isDarkTheme() else "#ffffff"))
 
     def _setBackgroundEffectMac(self, value: str) -> None:
         if value == "None":

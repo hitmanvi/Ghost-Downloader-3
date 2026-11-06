@@ -1,5 +1,5 @@
 from PySide6.QtCore import Qt, QRectF, QTimer
-from PySide6.QtGui import QColor, QPainter, QPaintEvent
+from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPaintEvent
 from PySide6.QtWidgets import QWidget
 from qfluentwidgets import isDarkTheme
 
@@ -54,12 +54,15 @@ class SegmentedProgressBar(QWidget):
         self._isPaused = True
         self.update()
 
-    def barColor(self) -> QColor:
+    def barColor(self):
         if self._isPaused:
             return QColor(252, 225, 0) if isDarkTheme() else QColor(157, 93, 0)
         if self._isError:
             return QColor(255, 153, 164) if isDarkTheme() else QColor(196, 43, 28)
-        return QColor("#56cdb9" if isDarkTheme() else "#09887d")
+        gradient = QLinearGradient(0, 0, self.width(), 0)
+        gradient.setColorAt(0, QColor("#5394ff" if isDarkTheme() else "#367cf8"))
+        gradient.setColorAt(1, QColor("#43cff4" if isDarkTheme() else "#13b9eb"))
+        return gradient
 
     def _toMergedSpans(self) -> list[tuple[float, float]]:
         intervals = sorted(
@@ -85,7 +88,7 @@ class SegmentedProgressBar(QWidget):
         width = self.width()
         height = self.height()
         radius = height / 2
-        painter.setBrush(QColor("#36544f" if isDarkTheme() else "#d8e8e5"))
+        painter.setBrush(QColor("#34445b" if isDarkTheme() else "#e3eaf6"))
         painter.drawRoundedRect(QRectF(self.rect()), radius, radius)
         painter.setBrush(self.barColor())
         for start, end in self._spans:
