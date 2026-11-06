@@ -10,7 +10,7 @@ from PySide6.QtWidgets import QApplication, QGraphicsDropShadowEffect, QHBoxLayo
 from qfluentwidgets import (
     Action, CaptionLabel, CheckableMenu, CommandBarView, DropDownToolButton,
     FluentIcon, Flyout, FlyoutView, IconWidget, InfoBar, InfoBarPosition, MenuIndicatorType, PushButton,
-    RoundMenu, PlainTextEdit, SpinBox, SubtitleLabel, PrimaryPushButton, DropDownPushButton, SwitchButton,
+    RoundMenu, PlainTextEdit, SpinBox, SubtitleLabel, PrimaryToolButton, Theme, DropDownPushButton, SwitchButton,
     isDarkTheme, qconfig, setCustomStyleSheet, TransparentPushButton,
 )
 
@@ -187,7 +187,7 @@ class TaskPage(QWidget):
             self.filterButtons[mode] = button
         self.toolBar = QWidget(self)
         self.heading = SubtitleLabel(self.tr("下载任务"), self)
-        self.newButton = PrimaryPushButton(FluentIcon.ADD, self.tr("新建任务"), self)
+        self.newButton = PrimaryToolButton(FluentIcon.ADD.icon(Theme.DARK), self)
         self.pauseAllButton = TransparentPushButton(FluentIcon.PAUSE, self.tr("全部暂停"), self.toolBar)
         self.columns = QWidget(self)
         self.columns.setObjectName("taskColumns")
@@ -206,7 +206,7 @@ class TaskPage(QWidget):
         self.urlEdit.setFixedHeight(96)
         self.urlEdit.setAcceptDrops(False)
         self.pasteButton = PushButton(FluentIcon.PASTE, self.tr("粘贴链接"), self.firstTask)
-        self.addButton = PrimaryPushButton(FluentIcon.ADD, self.tr("新建任务"), self.firstTask)
+        self.addButton = PrimaryToolButton(FluentIcon.ADD.icon(Theme.DARK), self.firstTask)
 
         # sort menu
         self.sortMenu = CheckableMenu(parent=self, indicatorType=MenuIndicatorType.RADIO)
@@ -269,8 +269,11 @@ class TaskPage(QWidget):
             button.setObjectName("taskControl")
             light = dark = "#taskControl { padding-top: 1px; padding-bottom: 1px; font-size: 13px; }"
             if button in (self.newButton, self.addButton):
-                light += "PrimaryPushButton { background-color: #185ed9; color: white; }"
-                dark += "PrimaryPushButton { background-color: #2465d9; color: white; }"
+                button.setFixedWidth(CONTROL_HEIGHT)
+                button.setToolTip(self.tr("新建任务"))
+                button.setAccessibleName(button.toolTip())
+                light += "PrimaryToolButton { background-color: #185ed9; }"
+                dark += "PrimaryToolButton { background-color: #2465d9; }"
             setCustomStyleSheet(button, light, dark)
         setCustomStyleSheet(self.urlEdit, "PlainTextEdit { background: #f5f8fd; }",
                             "PlainTextEdit { background: #1e2a3b; }")
