@@ -187,7 +187,7 @@ class MainWindow(FluentWindowBase):
             page = self._createPage(pageClass)
             page.setObjectName(routeKey)
             # addSubInterface 会设这个属性，懒创建绕过了它；不设时每次切页都会重刷整个内容区的样式
-            page.setProperty("isStackedTransparent", False)
+            page.setProperty("isStackedTransparent", isinstance(page, TaskPage))
             if isinstance(page, (SettingPage, TaskPage)):
                 self.sidebars.addWidget(page.sidebar)
             self.stackedWidget.addWidget(page)
@@ -196,6 +196,7 @@ class MainWindow(FluentWindowBase):
                 self.stackedWidget.currentChanged.connect(self._onCurrentInterfaceChanged)
                 qrouter.setDefaultRouteKey(self.stackedWidget, routeKey)
         if self.stackedWidget.currentWidget() is page:
+            self._updateStackedBackground()
             self._updateNavigation(page)
         else:
             self.switchTo(page)
@@ -214,6 +215,7 @@ class MainWindow(FluentWindowBase):
             button.setChecked(type(page) is pageClass)
         taskPage.setFilterSelected(page is taskPage)
         self._updateSearchTarget(page)
+        self.update()
 
     def _createPage(self, pageClass: type[QWidget]) -> QWidget:
         if pageClass is TaskPage:
@@ -686,12 +688,19 @@ class MainWindow(FluentWindowBase):
 
     def paintEvent(self, e):
         if self._macVisualEffectView is not None:
-            painter = QPainter(self)
-            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
-            painter.fillRect(self.rect(), self.backgroundColor)
+            with QPainter(self) as painter:
+                painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
+                painter.fillRect(self.rect(), self.backgroundColor)
             self._updateSystemTitleBar()
-            return
-        super().paintEvent(e)
+        else:
+            super().paintEvent(e)
+
+        if isinstance(self.stackedWidget.currentWidget(), TaskPage):
+            # 标题栏单独覆盖在页面上，实色底须从窗口顶部开始绘制。
+            panel = self.stackedWidget.geometry()
+            panel.setTop(0)
+            with QPainter(self) as painter:
+                painter.fillRect(panel, QColor("#142733" if isDarkTheme() else "#f9fafb"))
 
     def _setBackgroundEffectMac(self, value: str) -> None:
         if value == "None":
