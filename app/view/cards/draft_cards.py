@@ -13,6 +13,7 @@ from qfluentwidgets import (
 from app.config.cfg import cfg
 from app.platform.filesystem import splitStemExt
 from app.format import toReadableSize
+from app.view.components.control_sizes import setRowIconSize
 from app.view.components.category_settings import toCategoryName
 from app.view.components.labels import EditableLabel, ElidedLabel
 
@@ -54,9 +55,9 @@ class DraftCard(QWidget):
         self.nameLabel.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.nameEdit.setText(self._task.name)
         self.nameEdit.hide()
-        self.categoryButton.setFixedSize(28, 28)
+        setRowIconSize(self.categoryButton)
         self.categoryButton.installEventFilter(ToolTipFilter(self.categoryButton))
-        self.editButton.setFixedSize(28, 28)
+        setRowIconSize(self.editButton)
         self.editButton.setToolTip(self.tr("编辑任务参数"))
         self.editButton.installEventFilter(ToolTipFilter(self.editButton))
         self.editButton.setVisible(self._task.canEdit)
@@ -159,7 +160,7 @@ class MultiFileDraftCard(DraftCard):
         self._selectFilesButton = None
         if self._task.files and len(self._task.files) > 1:
             self._selectFilesButton = TransparentToolButton(FluentIcon.LIBRARY, self)
-            self._selectFilesButton.setFixedSize(28, 28)
+            setRowIconSize(self._selectFilesButton)
             self._selectFilesButton.setToolTip(self.tr("选择文件"))
             self._selectFilesButton.installEventFilter(ToolTipFilter(self._selectFilesButton))
         self._refreshSummary()
@@ -218,7 +219,7 @@ class FailedDraftCard(QWidget):
         setFont(self.reasonLabel, 12)
         self.reasonLabel.setTextColor(QColor(196, 43, 28), QColor(255, 153, 164))
         self.reasonLabel.setMaximumWidth(260)
-        self.refreshButton.setFixedSize(28, 28)
+        setRowIconSize(self.refreshButton)
         self.refreshButton.setToolTip(self.tr("重试"))
         self.refreshButton.installEventFilter(ToolTipFilter(self.refreshButton))
 

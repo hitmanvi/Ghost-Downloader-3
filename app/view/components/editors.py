@@ -12,6 +12,7 @@ from qfluentwidgets import (
 )
 
 from app.config.cfg import cfg
+from app.view.components.control_sizes import CONTROL_HEIGHT
 
 
 class AutoSizingEdit(PlainTextEdit):
@@ -47,7 +48,7 @@ class AutoSizingEdit(PlainTextEdit):
 
 RECENT_FOLDER_LIMIT: Final[int] = 20
 LINE_EDIT_PADDING: Final[int] = 60
-MENU_ROW_HEIGHT: Final[int] = 36
+MENU_ROW_HEIGHT: Final[int] = 32
 
 
 def addRecentFolder(path: str) -> None:
@@ -85,8 +86,11 @@ class FolderPicker(QWidget):
     def _initWidget(self) -> None:
         self.lineEdit.setMinimumWidth(200)
         self.lineEdit.addAction(self.menuAction)
+        self.lineEdit.setFixedHeight(CONTROL_HEIGHT)
+        self.lineEdit.hBoxLayout.setContentsMargins(4, 2, 4, 2)
+        self.browseButton.setFixedHeight(CONTROL_HEIGHT)
         if isinstance(self.browseButton, TransparentToolButton):
-            self.browseButton.setFixedSize(28, 28)
+            self.browseButton.setFixedWidth(CONTROL_HEIGHT)
         self.browseButton.setToolTip(self.tr("浏览文件夹"))
         self.browseButton.installEventFilter(ToolTipFilter(self.browseButton))
 

@@ -5,14 +5,14 @@ from datetime import datetime
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QFileInfo, QPoint, QRect, QRectF, Signal, Qt, QT_TRANSLATE_NOOP as N
+from PySide6.QtCore import QFileInfo, QPoint, QRect, QRectF, QSize, Signal, Qt, QT_TRANSLATE_NOOP as N
 from PySide6.QtGui import QColor, QIcon, QLinearGradient, QPainter
-from PySide6.QtWidgets import QFileIconProvider, QHBoxLayout, QLabel, QVBoxLayout, QApplication, QWidget, QSizePolicy
+from PySide6.QtWidgets import QFileIconProvider, QHBoxLayout, QLabel, QVBoxLayout, QApplication, QWidget, QSizePolicy, QToolButton
 from qfluentwidgets import (
     Action, CardWidget, CheckBox, FluentIcon, Theme,
-    IndeterminateProgressBar, PushButton, ProgressBar, ProgressRing,
+    IndeterminateProgressBar, ProgressBar, ProgressRing,
     RoundMenu, ToolButton, ToolTipFilter, TransparentToolButton,
-    isDarkTheme, setCustomStyleSheet, themeColor,
+    isDarkTheme, themeColor,
 )
 
 from app.config.cfg import cfg
@@ -22,6 +22,7 @@ from app.models.task import TaskStatus, SpecialFileSize
 from app.platform.desktop import openFile, revealInFolder
 from app.platform.filesystem import isExisting, isFolder
 from app.view.components.labels import ElidedLabel, IconBodyLabel, IconStrongBodyLabel
+from app.view.components.control_sizes import CONTROL_ICON_SIZE, ROW_ACTION_HEIGHT, setRowIconSize
 from app.view.components.category_settings import toCategoryName
 from app.i18n import toLocalizedError
 
@@ -86,7 +87,34 @@ SPEED_FIELD = FieldSpec("speed", FluentIcon.SPEED_HIGH, {
 ETA_FIELD = FieldSpec("eta", FluentIcon.STOP_WATCH, {TaskStatus.RUNNING: toEtaText})
 SIZE_FIELD = FieldSpec("size", FluentIcon.LIBRARY, {None: toSizeText})
 
-TOGGLE_BUTTON = ButtonSpec("toggle", FluentIcon.PLAY, N("TaskCard", "暂停/继续"), PushButton, states={
+
+class RowActionButton(QToolButton):
+    def __init__(self, icon, parent=None):
+        super().__init__(parent)
+        self.setObjectName("rowAction")
+        self.setFixedHeight(ROW_ACTION_HEIGHT)
+        self.setMinimumWidth(ROW_ACTION_HEIGHT)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.setIconSize(QSize(CONTROL_ICON_SIZE, CONTROL_ICON_SIZE))
+        self.setIcon(icon)
+
+    def setIcon(self, icon: FluentIcon | QIcon) -> None:
+        super().setIcon(icon.qicon() if isinstance(icon, FluentIcon) else icon)
+
+    def setLabel(self, text: str) -> None:
+        self.setText(text)
+        if text:
+            self.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+            self.ensurePolished()
+            width = max(ROW_ACTION_HEIGHT, self.sizeHint().width())
+            if width <= TaskCard.ACTION_WIDTH - ROW_ACTION_HEIGHT - TaskCard.ACTION_GAP:
+                self.setFixedWidth(width)
+                return
+        self.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        self.setFixedWidth(ROW_ACTION_HEIGHT)
+
+
+TOGGLE_BUTTON = ButtonSpec("toggle", FluentIcon.PLAY, N("TaskCard", "暂停/继续"), RowActionButton, states={
     TaskStatus.RUNNING: lambda t: ButtonState(icon=FluentIcon.PAUSE, enabled=t.canPause),
     TaskStatus.COMPLETED: lambda t: ButtonState(
         icon=FluentIcon.PAUSE if t.isSeeding else None,
@@ -140,7 +168,7 @@ CHECKSUM_BUTTON = ButtonSpec("checksum", FluentIcon.FINGERPRINT, N("TaskCard", "
         enabled=t.hasOutputFile and isExisting(t.outputPath)),
 })
 
-OPEN_FILE_BUTTON = ButtonSpec("openFile", FluentIcon.LINK, N("TaskCard", "打开文件"), PushButton, states={
+OPEN_FILE_BUTTON = ButtonSpec("openFile", FluentIcon.LINK, N("TaskCard", "打开文件"), RowActionButton, states={
     None: lambda t: ButtonState(enabled=False),
     TaskStatus.COMPLETED: lambda t: ButtonState(
         enabled=not t.hasOutputFile or isExisting(t.outputPath)),
@@ -155,7 +183,8 @@ class TaskCard(CardWidget):
     NAME_STRETCH = 13
     STATUS_STRETCH = 10
     SIZE_WIDTH = 80
-    ACTION_WIDTH = 136
+    ACTION_GAP = 4
+    ACTION_WIDTH = ROW_ACTION_HEIGHT * 4 + ACTION_GAP * 3
     COLUMN_MARGIN = 12
     COLUMN_GAP = 12
     selectionChanged = Signal(bool, bool)
@@ -171,10 +200,10 @@ class TaskCard(CardWidget):
     speedLabel: ElidedLabel
     etaLabel: ElidedLabel
     sizeLabel: ElidedLabel
-    toggleButton: PushButton
+    toggleButton: RowActionButton | ToolButton
     selectFilesButton: ToolButton
     checksumButton: ChecksumButton
-    openFileButton: PushButton
+    openFileButton: RowActionButton
     openFolderButton: ToolButton
     deleteButton: TransparentToolButton
 
@@ -209,14 +238,15 @@ class TaskCard(CardWidget):
 
         self.moreButton = TransparentToolButton(FluentIcon.MORE, self)
         self.moreButton.setAccessibleName(self.tr("更多任务操作"))
+        self.moreButton.setToolTip(self.tr("更多任务操作"))
+        setRowIconSize(self.moreButton)
         self.secondaryButtons = QWidget(self)
         self.secondaryButtons.hide()
         for spec in self.buttons:
             parent = self if spec.name in {"toggle", "openFile", "checksum"} else self.secondaryButtons
-            if issubclass(spec.buttonType, PushButton):
-                button = spec.buttonType(spec.icon, "", parent)
-            else:
-                button = spec.buttonType(spec.icon, parent)
+            button = spec.buttonType(spec.icon, parent)
+            if not isinstance(button, RowActionButton):
+                setRowIconSize(button)
             if parent is self.secondaryButtons:
                 button.show()
             setattr(self, f"{spec.name}Button", button)
@@ -253,6 +283,7 @@ class TaskCard(CardWidget):
             if spec.tooltip:
                 button = getattr(self, f"{spec.name}Button")
                 button.setToolTip(self.tr(spec.tooltip))
+                button.setAccessibleName(button.toolTip())
                 button.installEventFilter(ToolTipFilter(button))
 
     def _initLayout(self) -> None:
@@ -300,7 +331,7 @@ class TaskCard(CardWidget):
         actions.setFixedWidth(self.ACTION_WIDTH)
         buttons = QHBoxLayout(actions)
         buttons.setContentsMargins(0, 0, 0, 0)
-        buttons.setSpacing(2)
+        buttons.setSpacing(self.ACTION_GAP)
         buttons.addStretch()
         for button in (self.checksumButton, self.openFileButton, self.toggleButton, self.moreButton):
             buttons.addWidget(button)
@@ -311,7 +342,6 @@ class TaskCard(CardWidget):
         self.hBoxLayout.addWidget(sizeColumn)
         self.hBoxLayout.addLayout(transfer, self.STATUS_STRETCH)
         self.hBoxLayout.addWidget(actions)
-        self.openFileButton.setText(self.tr("打开文件"))
 
     def _bind(self) -> None:
         self.moreButton.clicked.connect(lambda: self.openMenu(self.moreButton.mapToGlobal(self.moreButton.rect().bottomLeft())))
@@ -373,21 +403,21 @@ class TaskCard(CardWidget):
         self.openFileButton.setVisible(task.status == TaskStatus.COMPLETED)
         self.toggleButton.setVisible(task.status != TaskStatus.COMPLETED or task.canSeed)
         if task.status == TaskStatus.COMPLETED:
-            self.openFileButton.setText("" if task.canSeed or checksumProgress is not None else self.tr("打开文件"))
+            self.openFileButton.setLabel("" if task.canSeed or checksumProgress is not None else self.tr("打开文件"))
         if self._lastStatus != task.status or task.status == TaskStatus.COMPLETED:
             label = {
                 TaskStatus.RUNNING: self.tr("暂停"), TaskStatus.FAILED: self.tr("重试"),
                 TaskStatus.WAITING: self.tr("开始"), TaskStatus.PAUSED: self.tr("继续"),
                 TaskStatus.COMPLETED: self.tr("停止做种") if task.isSeeding else self.tr("做种"),
             }[task.status]
-            if isinstance(self.toggleButton, PushButton):
-                self.toggleButton.setText("" if task.status == TaskStatus.COMPLETED else label)
+            if isinstance(self.toggleButton, RowActionButton):
+                self.toggleButton.setLabel("" if task.status == TaskStatus.COMPLETED else label)
                 self.toggleButton.setToolTip(label)
-            if self._lastStatus != task.status:
-                isFailed = task.status == TaskStatus.FAILED
-                setCustomStyleSheet(self.toggleButton,
-                                    "QAbstractButton { background: #fff1eb; color: #923a29; }" if isFailed else "",
-                                    "QAbstractButton { background: #512e2a; color: #ffb5a4; }" if isFailed else "")
+                self.toggleButton.setAccessibleName(label)
+                if self._lastStatus != task.status:
+                    self.toggleButton.setProperty("failed", task.status == TaskStatus.FAILED)
+                    self.toggleButton.style().unpolish(self.toggleButton)
+                    self.toggleButton.style().polish(self.toggleButton)
         self._lastStatus = task.status
 
     def _refreshForStatus(self, task: Task) -> None:

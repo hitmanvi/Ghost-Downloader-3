@@ -1,3 +1,12 @@
+from PySide6.QtCore import QSize
+
+
 CONTROL_HEIGHT = 28
 CONTROL_ICON_SIZE = 14
 SIDEBAR_ROW_HEIGHT = 32
+ROW_ACTION_HEIGHT = 26
+
+
+def setRowIconSize(button):
+    button.setFixedSize(ROW_ACTION_HEIGHT, ROW_ACTION_HEIGHT)
+    button.setIconSize(QSize(CONTROL_ICON_SIZE, CONTROL_ICON_SIZE))

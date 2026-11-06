@@ -601,6 +601,15 @@ class TaskPage(QWidget):
             #taskTabs QPushButton:checked {{ color: {accent}; border-bottom-color: {accent}; }}
             #taskTabs QPushButton:hover, #taskTabs QPushButton:focus {{ background: {tint}; }}
         """)
+        retryInk, retryFill = ("#ffb5a4", "#512e2a") if isDarkTheme() else ("#923a29", "#fff1eb")
+        self.scrollWidget.setStyleSheet(f"""
+            #rowAction {{ font-size: 12px; padding: 0 5px; color: {ink}; background: transparent;
+                border: 1px solid {line}; border-radius: 4px; }}
+            #rowAction[failed="true"] {{ color: {retryInk}; background: {retryFill}; }}
+            #rowAction:hover, #rowAction:focus {{ border-color: {accent}; }}
+            #rowAction:pressed {{ background: {tint}; }}
+            #rowAction:disabled {{ color: palette(mid); border-color: {line}; }}
+        """)
         self.columns.setStyleSheet(f"#taskColumns {{ background: {tint}; }}")
 
     def _onMoveToFrontSelected(self) -> None:
