@@ -25,6 +25,7 @@ from app.i18n import toLocalizedError
 from app.models.task import toTaskError
 from app.platform.desktop import openChromiumUrl, revealInFolder
 from app.platform.file_association import registerUrlScheme, unregisterUrlScheme
+from app.config.paths import IS_MACOS_DEV
 from app.platform.run_at_login import setRunAtLogin
 from app.services.port_listener import ListenStatus
 from app.config.constants import (
@@ -660,6 +661,7 @@ class AdvancedOptionsPage(QWidget):
             self.tr("登录系统时自动在后台启动，随时接管下载"),
             isChecked=cfg.shouldRunAtLogin.value, parent=self,
         )
+        self.runAtLoginCard.setEnabled(not IS_MACOS_DEV)
         self.clipboardCard = OptionCard(
             FluentIcon.PASTE, self.tr("剪贴板监听"),
             self.tr("复制下载链接时自动弹出新任务提示"),

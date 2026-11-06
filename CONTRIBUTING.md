@@ -31,6 +31,10 @@ Ghost Downloader 欢迎使用 AI 工具辅助开发，但请在提交 PR 时如�
 
 只改 `app/view/` 的 PR 不会进入移动端，不签也可以合并。
 
+## 在 macOS 上开发
+
+在项目根目录运行 `uv run Ghost-Downloader-3.py`。源码版可与安装版同时运行，任务和设置保存在独立的 `GhostDownloader-dev` 目录中。下面的源码 CLI 连接开发实例，安装的 `ghd` 连接安装版。
+
 ## 从源码运行 cli
 
 ```sh
@@ -69,6 +73,10 @@ Yes. Code in the public repository is always available under GPL v3, as promised
 ### Do I need to sign for desktop UI changes only?
 
 PRs that only touch `app/view/` never reach the mobile app and can be merged without signing.
+
+## Developing on macOS
+
+Run `uv run Ghost-Downloader-3.py` from the project root. The source app can run alongside the installed app and stores its tasks and settings in a separate `GhostDownloader-dev` folder. The source CLI below addresses the development instance. The installed `ghd` command addresses the installed app.
 
 ## Running the cli from source
 

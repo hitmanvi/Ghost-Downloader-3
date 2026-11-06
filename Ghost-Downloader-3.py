@@ -2,7 +2,7 @@ import os
 import sys
 import traceback
 
-from app.config.paths import APP_DATA_DIR
+from app.config.paths import APP_DATA_DIR, IS_MACOS_DEV
 
 
 def _exceptionHook(exceptionType, value, tb):
@@ -88,8 +88,9 @@ def startApp(application, primaryInstance, isSilent=False):
     coroutineRunner, taskService, featureService = engine.coroutineRunner, engine.taskService, engine.featureService
     browserService, speedMeter = engine.browserService, engine.speedMeter
 
-    deleteBackupDir()
-    if deleteLegacyAppIdFiles():
+    if not IS_MACOS_DEV:
+        deleteBackupDir()
+    if not IS_MACOS_DEV and deleteLegacyAppIdFiles():
         from app.platform.file_association import registerUrlScheme
         from app.platform.run_at_login import setRunAtLogin
         if cfg.isUrlSchemeRegistered.value:
@@ -195,7 +196,9 @@ def startApp(application, primaryInstance, isSilent=False):
         window.setupPacks()
         engine.start()
 
-        if not isSilent and sys.platform != "darwin":
+        if IS_MACOS_DEV and not isSilent:
+            show()
+        elif not isSilent and sys.platform != "darwin":
             splash.finish()
 
     if sys.platform != "darwin":

@@ -14,6 +14,7 @@ from qfluentwidgets import (
 from app.view.components.sidebar import Sidebar
 from app.view.components.scroll_area import FastScrollArea
 
+from app.config.paths import IS_MACOS_DEV
 from app.config.cfg import cfg, LANGUAGE_TEXTS
 from app.i18n import toLocalizedError
 from app.models.task import toTaskError
@@ -266,7 +267,8 @@ class SettingPage(FastScrollArea):
             self.aria2EnableCard,
             SpinBoxSettingCard(
                 FluentIcon.GLOBE, self.tr("监听端口"),
-                self.tr("Aria2 RPC 默认端口为 16800"),
+                self.tr("开发版默认端口为 {0}").format(cfg.aria2RpcPort.defaultValue) if IS_MACOS_DEV
+                else self.tr("Aria2 RPC 默认端口为 16800"),
                 configItem=cfg.aria2RpcPort, singleStep=1, division=1,
             ),
             LineEditSettingCard(
@@ -360,6 +362,10 @@ class SettingPage(FastScrollArea):
             self.tr("安装后可在终端中使用 ghd 命令添加和管理任务"),
         )
         self._refreshCommandLineToolCard()
+        if IS_MACOS_DEV:
+            for card in (self.autoRunCard, self.commandLineToolCard):
+                card.setEnabled(False)
+                card.setToolTip(self.tr("此项由安装版管理"))
         softwareCards = [
             SwitchSettingCard(FluentIcon.UPDATE, self.tr("在应用程序启动时检查更新"),
                               self.tr("新版本将更稳定，并具有更多功能"),

@@ -15,14 +15,14 @@ from PySide6.QtCore import QObject, QSharedMemory
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 
 from app.config.constants import DESKTOP_ID, DESKTOP_OBJECT_PATH
-from app.config.paths import EXECUTABLE_PATH
+from app.config.paths import EXECUTABLE_PATH, PROFILE_NAME
 from app.platform.url_scheme import isWakeUri
 
 if TYPE_CHECKING:
     from app.platform.application import Application
 
 USER_ID = getpass.getuser() if sys.platform == "win32" else str(os.getuid())
-INSTANCE_NAME = f"GhostDownloader-{USER_ID}"
+INSTANCE_NAME = f"{PROFILE_NAME}-{USER_ID}"
 
 
 @dataclass(frozen=True)

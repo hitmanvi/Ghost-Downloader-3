@@ -7,6 +7,9 @@ from pathlib import Path
 
 from PySide6.QtCore import QStandardPaths
 
+IS_MACOS_DEV = sys.platform == "darwin" and "__compiled__" not in globals()
+PROFILE_NAME = "GhostDownloader-dev" if IS_MACOS_DEV else "GhostDownloader"
+
 EXECUTABLE_PATH = (
     Path(os.environ["APPIMAGE"]) if "APPIMAGE" in os.environ
     else Path(sys.argv[0]).resolve() if "__compiled__" in globals()
@@ -19,15 +22,11 @@ EXECUTABLE_DIR = (
     else Path(".")
 )
 
-APP_DATA_DIR = (
-    EXECUTABLE_DIR / "GhostDownloader"
-    if (EXECUTABLE_DIR / "GhostDownloader").is_dir()
-    else Path(QStandardPaths.writableLocation(
-        QStandardPaths.StandardLocation.GenericDataLocation
-    )) / "GhostDownloader"
-)
-
-PORTABLE_DIR = EXECUTABLE_DIR / "GhostDownloader"
+USER_DATA_DIR = Path(QStandardPaths.writableLocation(
+    QStandardPaths.StandardLocation.GenericDataLocation
+)) / PROFILE_NAME
+PORTABLE_DIR = EXECUTABLE_DIR / PROFILE_NAME
+APP_DATA_DIR = PORTABLE_DIR if PORTABLE_DIR.is_dir() else USER_DATA_DIR
 
 SEED_FEATURES_DIR = EXECUTABLE_DIR / "features"
 FEATURES_DIR = (
@@ -35,13 +34,11 @@ FEATURES_DIR = (
     if "__compiled__" not in globals()
     else APP_DATA_DIR / "features"
 )
-USER_DATA_DIR = Path(QStandardPaths.writableLocation(
-    QStandardPaths.StandardLocation.GenericDataLocation
-)) / "GhostDownloader"
-
 DOWNLOAD_DIR = Path(QStandardPaths.writableLocation(
     QStandardPaths.StandardLocation.DownloadLocation
 ))
+if IS_MACOS_DEV:
+    DOWNLOAD_DIR = DOWNLOAD_DIR / PROFILE_NAME
 
 
 def isPortable() -> bool:

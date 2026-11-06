@@ -19,7 +19,7 @@ from qfluentwidgets.components.dialog_box.mask_dialog_base import MaskDialogBase
 
 from app.config.cfg import CloseMode, cfg
 from app.config.constants import DONATE_URL, FEEDBACK_URL
-from app.config.paths import APP_DATA_DIR
+from app.config.paths import APP_DATA_DIR, IS_MACOS_DEV
 from app.platform.desktop import raiseWindow, revealInFolder
 from app.services.task_draft import TaskDraft
 from app.i18n import toLocalizedError
@@ -133,7 +133,7 @@ class MainWindow(FluentWindowBase):
 
     def _initWidget(self) -> None:
         self.setWindowIcon(QIcon(":/image/logo.png"))
-        self.setWindowTitle("Ghost Downloader")
+        self.setWindowTitle("Ghost Downloader (Dev)" if IS_MACOS_DEV else "Ghost Downloader")
         self.setMinimumSize(960, 540)
         if sys.platform == "win32":
             self._refreshBackgroundEffect()

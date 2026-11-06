@@ -8,7 +8,7 @@ from urllib.parse import urlsplit
 from urllib.request import getproxies
 
 from app.config.serializers import PathSerializer
-from app.config.paths import APP_DATA_DIR, DOWNLOAD_DIR
+from app.config.paths import APP_DATA_DIR, DOWNLOAD_DIR, IS_MACOS_DEV
 from qfluentwidgets import (
     QConfig,
     ConfigItem,
@@ -274,9 +274,9 @@ class Config(QConfig):
     )
 
     # 浏览器扩展
-    isBrowserExtensionEnabled = ConfigItem("Browser", "EnableBrowserExtension", True, BoolValidator())
+    isBrowserExtensionEnabled = ConfigItem("Browser", "EnableBrowserExtension", not IS_MACOS_DEV, BoolValidator())
     browserExtensionPairToken = ConfigItem("Browser", "BrowserExtensionPairToken", "")
-    browserExtensionPort = RangeConfigItem("Browser", "Port", 14370, RangeValidator(1024, 65535))
+    browserExtensionPort = RangeConfigItem("Browser", "Port", 14371 if IS_MACOS_DEV else 14370, RangeValidator(1024, 65535))
     shouldDraftTakenDownload = ConfigItem(
         "Browser", "EnableRaiseWindowWhenReceiveMsg", False, BoolValidator()
     )
@@ -284,7 +284,7 @@ class Config(QConfig):
 
     # Aria2 RPC 兼容
     isAria2RpcEnabled = ConfigItem("Aria2Rpc", "Enabled", False, BoolValidator())
-    aria2RpcPort = RangeConfigItem("Aria2Rpc", "Port", 16800, RangeValidator(1024, 65535))
+    aria2RpcPort = RangeConfigItem("Aria2Rpc", "Port", 16801 if IS_MACOS_DEV else 16800, RangeValidator(1024, 65535))
     aria2RpcToken = ConfigItem("Aria2Rpc", "Token", "")
     aria2RpcEmulateFingerprint = ConfigItem("Aria2Rpc", "EmulateFingerprint", False, BoolValidator())
 
@@ -313,20 +313,20 @@ class Config(QConfig):
     )
 
     # 软件
-    shouldCheckUpdateAtStartup = ConfigItem("Software", "CheckUpdateAtStartUp", True, BoolValidator())
+    shouldCheckUpdateAtStartup = ConfigItem("Software", "CheckUpdateAtStartUp", not IS_MACOS_DEV, BoolValidator())
     shouldRunAtLogin = ConfigItem("Software", "AutoRun", False, BoolValidator())
     closeMode = OptionsConfigItem(
         "Software", "CloseMode", CloseMode.ASK,
         OptionsValidator(CloseMode), EnumSerializer(CloseMode),
     )
-    isClipboardListenerEnabled = ConfigItem("Software", "ClipboardListener", True, BoolValidator())
+    isClipboardListenerEnabled = ConfigItem("Software", "ClipboardListener", not IS_MACOS_DEV, BoolValidator())
     clipboardIgnoredPacks = ConfigItem("Software", "ClipboardIgnoredPacks", [], StringListValidator())
     geometry = ConfigItem(
         "Software", "Geometry", (0, 0, 0, 0), serializer=GeometrySerializer(),
     )
 
     # OOBE
-    hasCompletedOobe = ConfigItem("Software", "HasCompletedOobe", False, BoolValidator())
+    hasCompletedOobe = ConfigItem("Software", "HasCompletedOobe", IS_MACOS_DEV, BoolValidator())
 
     # UI 状态
     expandedSettingGroups = ConfigItem("UI", "ExpandedSettingGroups", [], StringListValidator())

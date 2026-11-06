@@ -20,6 +20,7 @@ from AppKit import (
 from Foundation import NSData
 
 from app.config.cfg import cfg
+from app.config.paths import IS_MACOS_DEV
 from app.format import toReadableSize
 from app.signal_bus import signalBus
 
@@ -66,6 +67,8 @@ class MacStatusItem:
         self._button = self._statusItem.button()
         self._button.setImage_(self._buildMenuBarIcon())
         self._button.setImagePosition_(NSImageLeft)
+        if IS_MACOS_DEV:
+            self._button.setToolTip_("Ghost Downloader (Dev)")
 
         self._target = MenuTarget.alloc().init()
         self._target.owner = self
