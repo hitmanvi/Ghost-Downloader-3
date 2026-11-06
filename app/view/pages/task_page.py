@@ -14,6 +14,7 @@ from qfluentwidgets import (
     isDarkTheme, qconfig, setCustomStyleSheet, TransparentPushButton,
 )
 
+from app.view.components.control_sizes import CONTROL_HEIGHT, CONTROL_ICON_SIZE
 from app.view.components.sidebar import Sidebar
 from app.view.components.band_selector import BandSelector
 from app.view.components.scroll_area import FastScrollArea, PAGE_MARGIN
@@ -22,6 +23,7 @@ from app.config.cfg import cfg
 from app.format import toReadableSize
 from app.i18n import toLocalizedError
 from app.models.task import TaskError, TaskStatus
+from app.platform.desktop import openFolder
 from app.platform.filesystem import isExisting
 from app.view.cards.task_cards import TaskCard
 from app.view.components.category_settings import toCategoryName
@@ -126,7 +128,6 @@ class EmptyStatusWidget(QWidget):
 
 class TaskPage(QWidget):
     urlsRequested = Signal(list)
-    filterRequested = Signal()
     ROW_SPACING = 0
     VIEWPORT_BUFFER = 5
 
@@ -138,7 +139,6 @@ class TaskPage(QWidget):
         self._speedMeter = speedMeter
         self._plan = plan
         self._filterMode = FilterMode.ALL
-        self._categoryFilter = ""
         self._sortField = SortField.CREATED_AT
         self._sortAscending = False
         self._searchText = ""
@@ -167,8 +167,11 @@ class TaskPage(QWidget):
         self.sidebar = Sidebar("", self)
         self.downloadButton = self.sidebar.add(self.tr("下载任务"), FluentIcon.DOWNLOAD)
         self.downloadButton.setCheckable(True)
-        self.categoryRows = self.sidebar.addSection(self.tr("文件分类"))
-        self.categoryButtons = {}
+        shortcuts = self.sidebar.addSection(self.tr("快捷操作"))
+        self.folderButton = self.sidebar.add(self.tr("打开下载文件夹"), FluentIcon.FOLDER, section=shortcuts)
+        self.planButton = self.sidebar.add(self.tr("计划任务"), FluentIcon.DATE_TIME, section=shortcuts)
+        self.planButton.setCheckable(True)
+        self.planButton.setVisible(plan is not None)
         self.filterNames = {
             FilterMode.ALL: self.tr("全部"), FilterMode.ACTIVE: self.tr("进行中"),
             FilterMode.PAUSED: self.tr("已暂停"), FilterMode.COMPLETED: self.tr("已完成"),
@@ -193,7 +196,6 @@ class TaskPage(QWidget):
         self.moreMenu = RoundMenu(parent=self.moreButton)
         self.startAllAction = Action(FluentIcon.PLAY, self.tr("全部开始"), self)
         self.selectAction = Action(FluentIcon.CLEAR_SELECTION, self.tr("选择任务"), self)
-        self.planAction = Action(FluentIcon.DATE_TIME, self.tr("计划任务"), self, checkable=True)
         self.rateLimitButton = PushButton(FluentIcon.SPEED_OFF, self.tr("不限速"), self)
         self.speedBadge = IconBodyLabel("0 B/s", FluentIcon.SPEED_HIGH, self)
         self.sortButton = DropDownPushButton(FluentIcon.LAYOUT, self.tr("按添加时间"), self.toolBar)
@@ -255,13 +257,20 @@ class TaskPage(QWidget):
         self.createdAtSortAction.setChecked(True)
         self.descendingAction.setChecked(True)
 
-        self.moreMenu.addActions([self.startAllAction, self.selectAction, self.planAction])
+        self.moreMenu.addActions([self.startAllAction, self.selectAction])
         self.moreButton.setMenu(self.moreMenu)
         self.moreButton.setAccessibleName(self.tr("任务操作"))
         self._onSpeedLimitChanged()
-        for button in (self.addButton, self.newButton):
-            setCustomStyleSheet(button, "PrimaryPushButton { background-color: #185ed9; color: white; }",
-                                "PrimaryPushButton { background-color: #2465d9; color: white; }")
+        for button in (self.newButton, self.addButton, self.pasteButton, self.pauseAllButton,
+                       self.sortButton, self.moreButton, self.rateLimitButton):
+            button.setFixedHeight(CONTROL_HEIGHT)
+            button.setIconSize(QSize(CONTROL_ICON_SIZE, CONTROL_ICON_SIZE))
+            button.setObjectName("taskControl")
+            light = dark = "#taskControl { padding-top: 1px; padding-bottom: 1px; font-size: 13px; }"
+            if button in (self.newButton, self.addButton):
+                light += "PrimaryPushButton { background-color: #185ed9; color: white; }"
+                dark += "PrimaryPushButton { background-color: #2465d9; color: white; }"
+            setCustomStyleSheet(button, light, dark)
         setCustomStyleSheet(self.urlEdit, "PlainTextEdit { background: #f5f8fd; }",
                             "PlainTextEdit { background: #1e2a3b; }")
         self.speedBadge.setTextColor(QColor("#1c60d7"), QColor("#8bb7ff"))
@@ -269,8 +278,6 @@ class TaskPage(QWidget):
 
         self.emptyStatusWidget.setMinimumWidth(200)
         self.emptyStatusWidget.adjustSize()
-
-        self._refreshCategories()
 
     def _initLayout(self) -> None:
         header = QHBoxLayout()
@@ -368,7 +375,6 @@ class TaskPage(QWidget):
         self._taskService.checksumCompleted.connect(self._onChecksumCompleted, owner=self)
         self._taskService.checksumStopped.connect(self._onChecksumStopped, owner=self)
         self._taskService.queueChanged.connect(self._refreshListTimer.start, owner=self)
-        self._taskService.taskCategoryChanged.connect(self._refreshListTimer.start, owner=self)
         self._taskService.fileDisappeared.connect(self._onFileDisappeared, owner=self)
         self._taskService.fileDeleteDenied.connect(self._onFileDeleteDenied, owner=self)
         self._taskService.overwriteFailed.connect(self._onOverwriteFailed, owner=self)
@@ -382,7 +388,8 @@ class TaskPage(QWidget):
         self.startAllAction.triggered.connect(self.startAll)
         self.pauseAllButton.clicked.connect(self.pauseAll)
         self.selectAction.triggered.connect(lambda: self.setSelectionMode(not self._isSelectionMode))
-        self.planAction.triggered.connect(self._onPlanButtonClicked)
+        self.folderButton.clicked.connect(lambda: openFolder(cfg.downloadFolder.value))
+        self.planButton.clicked.connect(self._onPlanButtonClicked)
         self.rateLimitButton.clicked.connect(self._onRateLimitMenuRequested)
         cfg.isSpeedLimitEnabled.valueChanged.connect(self._onSpeedLimitChanged)
         cfg.speedLimitation.valueChanged.connect(self._onSpeedLimitChanged)
@@ -406,8 +413,6 @@ class TaskPage(QWidget):
         self.commandView.cancelAction.triggered.connect(lambda: self.setSelectionMode(False))
 
         qconfig.themeChangedFinished.connect(self._refreshTheme)
-        self.downloadButton.clicked.connect(lambda: self.setCategoryFilter(""))
-        self._categoryService.categoriesChanged.connect(self._refreshCategories, owner=self)
 
         self._bandSelector = BandSelector(
             self.scrollArea, self.scrollWidget,
@@ -432,22 +437,10 @@ class TaskPage(QWidget):
         self.urlEdit.clear()
         self.urlsRequested.emit(urls)
 
-    def setFilterSelected(self, isSelected: bool) -> None:
-        self.downloadButton.setChecked(isSelected and not self._categoryFilter)
-        for key, button in self.categoryButtons.items():
-            button.setChecked(isSelected and key == self._categoryFilter)
-
     def setFilterMode(self, mode: FilterMode) -> None:
         if mode != self._filterMode:
             self.setSelectionMode(False)
         self._filterMode = mode
-        self._refreshList()
-
-    def setCategoryFilter(self, categoryId: str) -> None:
-        self._categoryFilter = categoryId
-        self.setSelectionMode(False)
-        self.setFilterSelected(True)
-        self.filterRequested.emit()
         self._refreshList()
 
     def setSortField(self, field: SortField) -> None:
@@ -584,14 +577,14 @@ class TaskPage(QWidget):
         plan = self._plan
         if plan is None:
             return
-        if self.planAction.isChecked():
+        if self.planButton.isChecked():
             from app.view.dialogs.plan_task import PlanTaskDialog
             dialog = PlanTaskDialog(self.window())
             if dialog.exec():
                 plan.set(dialog.selectedAction(), dialog.selectedFilePath(),
-                         onCleared=lambda: self.planAction.setChecked(False))
+                         onCleared=lambda: self.planButton.setChecked(False))
             else:
-                self.planAction.setChecked(False)
+                self.planButton.setChecked(False)
             dialog.deleteLater()
         else:
             plan.clear()
@@ -609,24 +602,6 @@ class TaskPage(QWidget):
             #taskTabs QPushButton:hover, #taskTabs QPushButton:focus {{ background: {tint}; }}
         """)
         self.columns.setStyleSheet(f"#taskColumns {{ background: {tint}; }}")
-
-    def _refreshCategories(self) -> None:
-        for button in self.categoryButtons.values():
-            self.categoryRows.removeWidget(button)
-            button.hide()
-            button.deleteLater()
-        self.categoryButtons.clear()
-        for category in self._categoryService.categories():
-            key = category.categoryId
-            icon = getattr(FluentIcon, category.icon, FluentIcon.TAG)
-            button = self.sidebar.add(toCategoryName(category), icon, section=self.categoryRows)
-            button.setCheckable(True)
-            button.clicked.connect(lambda _, key=key: self.setCategoryFilter(key))
-            self.categoryButtons[key] = button
-        if self._categoryFilter not in self.categoryButtons:
-            self._categoryFilter = ""
-        self.setFilterSelected(not self.isHidden())
-        self._refreshListTimer.start()
 
     def _onMoveToFrontSelected(self) -> None:
         self._taskService.moveToFront(
@@ -696,16 +671,13 @@ class TaskPage(QWidget):
 
     def _refreshList(self) -> None:
         tasks = self._taskService.tasks
-        isFirstTask = not tasks and self._filterMode == FilterMode.ALL and not self._searchText and not self._categoryFilter
+        isFirstTask = not tasks and self._filterMode == FilterMode.ALL and not self._searchText
         self.firstTask.setVisible(isFirstTask)
         self.newButton.setVisible(not isFirstTask)
         self.toolBar.setVisible(not isFirstTask)
         self.columns.setVisible(not isFirstTask)
         self.scrollArea.setVisible(not isFirstTask)
 
-        if self._categoryFilter:
-            tasks = [t for t in tasks if (t.category if t.category is not None else
-                     self._categoryService.categoryOf(t)) == self._categoryFilter]
         for mode, button in self.filterButtons.items():
             count = len(tasks) if mode == FilterMode.ALL else sum(t.status in FILTER_TO_STATUSES[mode] for t in tasks)
             name = self.filterNames[mode]
@@ -768,12 +740,10 @@ class TaskPage(QWidget):
         else:
             if not self._taskService.tasks:
                 text = self.tr("暂无下载任务")
-            elif self._searchText and (self._filterMode != FilterMode.ALL or self._categoryFilter):
+            elif self._searchText and self._filterMode != FilterMode.ALL:
                 text = self.tr("没有匹配筛选条件的任务")
             elif self._searchText:
                 text = self.tr("没有匹配的任务")
-            elif self._categoryFilter:
-                text = self.tr("该分类下暂无任务")
             elif self._filterMode == FilterMode.ACTIVE:
                 text = self.tr("暂无活动任务")
             elif self._filterMode == FilterMode.COMPLETED:

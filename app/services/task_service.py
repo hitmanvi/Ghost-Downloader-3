@@ -270,7 +270,6 @@ class TaskService:
     taskPaused = Signal(object)
     taskCompleted = Signal(object)
     taskFailed = Signal(object)
-    taskCategoryChanged = Signal()
     tasksAllCompleted = Signal()
     seedingStarted = Signal(object)
     seedingStopped = Signal(object)
@@ -453,7 +452,6 @@ class TaskService:
     def setCategory(self, task: Task, categoryId: str) -> None:
         task.category = categoryId
         self._flushSoon()
-        self.taskCategoryChanged.emit()
 
     def updateSelection(self, task: Task, selectedIndexes: set[int]) -> None:
 

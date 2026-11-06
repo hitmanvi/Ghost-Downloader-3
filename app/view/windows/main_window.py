@@ -10,7 +10,7 @@ from PySide6.QtWidgets import QApplication, QHBoxLayout, QStackedWidget, QVBoxLa
 from qfluentwidgets import (
     MSFluentTitleBar, FluentIcon, MessageBox, Theme, InfoBar, InfoBarIcon, InfoBarPosition,
     SearchLineEdit, setThemeColor, IconWidget, SubtitleLabel, isDarkTheme, CheckBox, PrimaryPushButton,
-    PushButton, ToolTipFilter, TransparentToolButton, qconfig,
+    PushButton, ToolTipFilter, TransparentToolButton, qconfig, setCustomStyleSheet,
 )
 from qfluentwidgets.window.fluent_window import FluentWindowBase
 from qfluentwidgets.common import qrouter
@@ -27,6 +27,7 @@ from app.models.task import TaskError, TaskOptions
 from app.services.port_listener import PortListener
 from app.services.update_service import UpdateState
 from app.update import fetchAssetUrl, fetchBestAssetUrl, fetchRelease
+from app.view.components.control_sizes import CONTROL_HEIGHT
 from app.view.components.labels import IconBodyLabel
 from app.view.components.progress_toast import ProgressToast
 from app.view.dialogs.release_info import ReleaseInfoDialog
@@ -143,7 +144,14 @@ class MainWindow(FluentWindowBase):
         if sys.platform == "darwin":
             self.titleBar.hBoxLayout.insertSpacing(0, 60)
 
-        self.searchEdit.setClearButtonEnabled(True)
+        self.searchEdit.setFixedHeight(CONTROL_HEIGHT)
+        self.searchEdit.hBoxLayout.setContentsMargins(3, 2, 3, 2)
+        self.searchEdit.hBoxLayout.setSpacing(2)
+        for button in (self.searchEdit.clearButton, self.searchEdit.searchButton):
+            button.setFixedSize(20, 20)
+        self.searchEdit.setTextMargins(0, 0, 45, 0)
+        searchStyle = "SearchLineEdit { padding-top: 1px; padding-bottom: 1px; font-size: 13px; }"
+        setCustomStyleSheet(self.searchEdit, searchStyle, searchStyle)
         self.searchEdit.hide()
         self.searchEdit.raise_()
 
@@ -214,7 +222,7 @@ class MainWindow(FluentWindowBase):
         self.sidebars.setCurrentWidget(sidebar)
         for pageClass, button in self._packButtons.items():
             button.setChecked(type(page) is pageClass)
-        taskPage.setFilterSelected(page is taskPage)
+        taskPage.downloadButton.setChecked(page is taskPage)
         self._updateSearchTarget(page)
         self.update()
 
@@ -225,7 +233,7 @@ class MainWindow(FluentWindowBase):
                 self._categoryService, self._speedMeter, self._plan, parent=self,
             )
             page.urlsRequested.connect(self.addUrls)
-            page.filterRequested.connect(self._onTaskFilterRequested)
+            page.downloadButton.clicked.connect(lambda: self._showPage(TaskPage))
             page.sidebar.add(self.tr("设置"), FluentIcon.SETTING, bottom=True).clicked.connect(
                 lambda: self._showPage(SettingPage))
             return page
@@ -241,10 +249,6 @@ class MainWindow(FluentWindowBase):
             return page
         return self._featureService.createPage(pageClass, parent=self)
 
-    def _onTaskFilterRequested(self) -> None:
-        if self.stackedWidget.currentWidget() is not self._pages[TaskPage.__name__]:
-            self._showPage(TaskPage)
-
     def _onSearchTextChanged(self, text: str) -> None:
         page = self.stackedWidget.currentWidget()
         if hasattr(page, 'setSearchText'):
@@ -256,7 +260,7 @@ class MainWindow(FluentWindowBase):
             self.searchEdit.setPlaceholderText(page.searchPlaceholder)
             if isinstance(page, (TaskPage, SettingPage)):
                 page.searchLayout.addWidget(self.searchEdit)
-                self.searchEdit.setFixedWidth(160)
+                self.searchEdit.setFixedWidth(148)
             elif self.searchEdit.parentWidget() is not self.titleBar:
                 self.searchEdit.setParent(self.titleBar)
             if hasattr(page, "setSearchText"):

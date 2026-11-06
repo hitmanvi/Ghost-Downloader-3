@@ -1,7 +1,9 @@
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QFrame, QLabel, QPushButton, QScrollArea, QVBoxLayout, QWidget
 from qfluentwidgets import FluentIconBase, isDarkTheme, qconfig
+
+from app.view.components.control_sizes import CONTROL_ICON_SIZE, SIDEBAR_ROW_HEIGHT
 
 
 class Sidebar(QWidget):
@@ -38,7 +40,7 @@ class Sidebar(QWidget):
             #pageSidebar QScrollArea {{ background: transparent; border: none; }}
             #pageSidebar QLabel {{ color: {muted}; padding: 4px 12px; }}
             #pageSidebar QPushButton {{ color: {ink}; background: transparent; text-align: left;
-                padding: 6px 12px; border: 1px solid transparent; border-radius: 6px; }}
+                padding: 3px 12px; border: 1px solid transparent; border-radius: 6px; }}
             #pageSidebar QPushButton:hover {{ background: {hover}; }}
             #pageSidebar QPushButton:checked {{ background: {selected}; color: {accent}; }}
             #pageSidebar QPushButton:focus {{ border-color: {accent}; }}
@@ -54,6 +56,9 @@ class Sidebar(QWidget):
         self._rows.setContentsMargins(0, 0, 0, 0)
         self._rows.setSpacing(4)
         self._rows.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self._navigation = QVBoxLayout()
+        self._navigation.setSpacing(4)
+        self._rows.addLayout(self._navigation)
 
     def addSection(self, title):
         self._rows.addSpacing(12)
@@ -66,11 +71,12 @@ class Sidebar(QWidget):
     def add(self, text, icon, *, bottom=False, section=None):
         image = icon.qicon() if isinstance(icon, FluentIconBase) else QIcon(icon)
         button = QPushButton(image, text, self)
-        button.setMinimumHeight(36)
+        button.setFixedHeight(SIDEBAR_ROW_HEIGHT)
+        button.setIconSize(QSize(CONTROL_ICON_SIZE, CONTROL_ICON_SIZE))
         if bottom:
             self._items.addWidget(button)
         elif section is not None:
             section.addWidget(button)
         else:
-            self._rows.addWidget(button)
+            self._navigation.addWidget(button)
         return button
