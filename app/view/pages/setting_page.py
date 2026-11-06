@@ -2,16 +2,17 @@ from __future__ import annotations
 
 import sys
 
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QVBoxLayout, QWidget, QApplication
 from qfluentwidgets import (
     ComboBoxSettingCard, FluentIcon, HyperlinkCard, HyperlinkButton, InfoBar,
     InfoBarPosition, MessageBox, PrimaryPushSettingCard, PushButton, PushSettingCard,
-    RangeSettingCard, SwitchSettingCard, ToolButton, ToolTipFilter,
+    RangeSettingCard, SubtitleLabel, SwitchSettingCard, ToolButton, ToolTipFilter,
 )
 
-from app.view.components.scroll_area import FastScrollArea, PAGE_MARGIN
+from app.view.components.sidebar import Sidebar
+from app.view.components.scroll_area import FastScrollArea
 
 from app.config.cfg import cfg, LANGUAGE_TEXTS
 from app.i18n import toLocalizedError
@@ -31,6 +32,7 @@ from app.view.components.editors import FolderPicker, addRecentFolder
 
 
 class SettingPage(FastScrollArea):
+    sectionChanged = Signal()
 
     def __init__(self, featureService, browserService, browserListener, aria2RpcListener, coroutineRunner, categoryService, taskService, updateService, parent=None):
         super().__init__(parent)
@@ -44,10 +46,17 @@ class SettingPage(FastScrollArea):
         self._updateService = updateService
         self.container = QWidget()
         self.vBoxLayout = QVBoxLayout(self.container)
-        self.vBoxLayout.addStretch(1)
+        self.sidebar = Sidebar(self.tr("设置"), self)
+        self.heading = SubtitleLabel(self.container)
+        self.vBoxLayout.addWidget(self.heading)
+        self.sections = {}
+        self.sectionButtons = {}
+        self._section = "files"
+        self.fileGroup = CollapsibleSettingCardGroup(self.tr("文件保存"), "files", self.container, isFixed=True)
+        self.queueGroup = CollapsibleSettingCardGroup(self.tr("下载队列"), "queue", self.container, isFixed=True)
 
         self.generalGroup = CollapsibleSettingCardGroup(self.tr("综合下载设置"), "general", self.container)
-        self.categoryGroup = CollapsibleSettingCardGroup(self.tr("下载分类"), "category", self.container)
+        self.categoryGroup = CollapsibleSettingCardGroup(self.tr("分类"), "category", self.container, isFixed=True)
         if sys.platform != "darwin":
             self.associationGroup = CollapsibleSettingCardGroup(self.tr("关联设置"), "association", self.container)
         self.browserGroup = CollapsibleSettingCardGroup(self.tr("浏览器扩展"), "browser", self.container)
@@ -67,9 +76,6 @@ class SettingPage(FastScrollArea):
         self._refreshBrowserStatus()
         self._refreshAria2Status()
 
-    def addSettingGroup(self, group: CollapsibleSettingCardGroup) -> None:
-        self.vBoxLayout.insertWidget(self.vBoxLayout.count() - 1, group)
-
     def _initWidget(self) -> None:
         self.setWidget(self.container)
         self.setWidgetResizable(True)
@@ -77,8 +83,8 @@ class SettingPage(FastScrollArea):
         self.setObjectName("SettingPage")
         self.enableTransparentBackground()
         # 扣掉视口给滚动条让出的宽度，左右留白对称
-        rightMargin = max(0, PAGE_MARGIN - self.viewportMargins().right())
-        self.vBoxLayout.setContentsMargins(PAGE_MARGIN, PAGE_MARGIN, rightMargin, PAGE_MARGIN)
+        rightMargin = max(0, 28 - self.viewportMargins().right())
+        self.vBoxLayout.setContentsMargins(28, 8, rightMargin, 24)
 
     def _initCards(self) -> None:
         self.speedLimitationCard = SpinBoxSettingCard(
@@ -88,18 +94,32 @@ class SettingPage(FastScrollArea):
             singleStep=512, division=1 / 1024,
         )
         from qfluentwidgets import SettingCard
-        self.downloadFolderCard = SettingCard(FluentIcon.FOLDER, self.tr("下载路径"), self.tr("文件默认保存位置"))
+        self.downloadFolderCard = SettingCard(FluentIcon.FOLDER, self.tr("默认保存位置"))
         self.downloadFolderPicker = FolderPicker(
-            lambda: cfg.downloadFolder.defaultValue, self.tr("系统默认"), self.downloadFolderCard
+            lambda: cfg.downloadFolder.defaultValue, self.tr("系统默认"), self.downloadFolderCard,
+            browseText=self.tr("更改文件夹…"),
         )
         self.downloadFolderPicker.setPath(cfg.downloadFolder.value)
         self.downloadFolderCard.hBoxLayout.addWidget(self.downloadFolderPicker, 0, Qt.AlignmentFlag.AlignRight)
         self.downloadFolderCard.hBoxLayout.addSpacing(16)
         self.clientProfileCard = IdentitySettingCard()
 
+        self.downloadFolderPicker.setObjectName("defaultFolder")
+        self.downloadFolderPicker.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
+        self.downloadFolderPicker.setStyleSheet(
+            "#defaultFolder { background: rgba(54, 164, 158, 28); border-radius: 8px; padding: 4px; }")
+        self.fileGroup.addSettingCards([
+            self.downloadFolderCard,
+            ComboBoxSettingCard(cfg.nameConflict, FluentIcon.COPY, self.tr("同名文件"),
+                                self.tr("下载目录中已有同名文件时的处理方式"),
+                                texts=[self.tr("保留两者"), self.tr("覆盖"), self.tr("询问")]),
+        ])
+        queueCard = SpinBoxSettingCard(FluentIcon.TRAIN, self.tr("同时下载的任务数"),
+                                      configItem=cfg.maxTaskNum, singleStep=1)
+        queueCard.spinBox.setFixedWidth(96)
+        queueCard.spinBox.valueChanged.connect(lambda value: cfg.set(cfg.maxTaskNum, value))
+        self.queueGroup.addSettingCard(queueCard)
         self.generalGroup.addSettingCards([
-            RangeSettingCard(cfg.maxTaskNum, FluentIcon.TRAIN, self.tr("最大任务数"),
-                             self.tr("最多能同时进行的任务数量")),
             RangeSettingCard(cfg.preBlockNum, FluentIcon.CLOUD, self.tr("预分配线程数"),
                              self.tr("线程越多，下载越快。线程数大于 64 时，有触发反爬导致文件损坏的风险")),
             SwitchSettingCard(FluentIcon.SPEED_HIGH, self.tr("自动提速"),
@@ -115,10 +135,6 @@ class SettingPage(FastScrollArea):
             SwitchSettingCard(FluentIcon.DEVELOPER_TOOLS, self.tr("下载时验证 SSL 证书"),
                               self.tr("文件无法下载时，可尝试关闭该选项"),
                               cfg.shouldVerifySsl),
-            self.downloadFolderCard,
-            ComboBoxSettingCard(cfg.nameConflict, FluentIcon.COPY, self.tr("同名文件"),
-                                self.tr("下载目录中已有同名文件时的处理方式"),
-                                texts=[self.tr("保留两者"), self.tr("覆盖"), self.tr("询问")]),
             SwitchSettingCard(FluentIcon.BROOM, self.tr("自动移除缺失的任务"),
                               self.tr("文件被删除、移走或所在磁盘未连接时，自动从列表中移除已完成的任务"),
                               cfg.shouldRemoveMissingTasks),
@@ -132,7 +148,7 @@ class SettingPage(FastScrollArea):
 
         self.categoryRulesCard = CategoryRulesCard(self._categoryService)
         self.categoryGroup.addSettingCards([
-            SwitchSettingCard(FluentIcon.TAG, self.tr("启用下载分类"),
+            SwitchSettingCard(FluentIcon.TAG, self.tr("按文件类型自动分类"),
                               self.tr("根据扩展名将下载任务归类，便于筛选与分发到指定文件夹"),
                               cfg.isCategoryEnabled),
             self.categoryRulesCard,
@@ -339,7 +355,6 @@ class SettingPage(FastScrollArea):
                               self.tr("新版本将更稳定，并具有更多功能"),
                               cfg.shouldCheckUpdateAtStartup),
             self.autoRunCard,
-            self.commandLineToolCard,
             ComboBoxSettingCard(
                 cfg.closeMode, FluentIcon.POWER_BUTTON,
                 self.tr("关闭主窗口时"),
@@ -375,24 +390,54 @@ class SettingPage(FastScrollArea):
             HyperlinkCard(AUTHOR_URL, self.tr("打开作者的个人空间"), FluentIcon.PROJECTOR,
                           self.tr("了解作者"), self.tr("发现更多 {} 的作品").format(AUTHOR)),
             self.feedbackCard,
-            self.packInfoCard,
             self.aboutCard,
         ])
 
     def _initLayout(self) -> None:
-        self.addSettingGroup(self.generalGroup)
-        self.addSettingGroup(self.categoryGroup)
+        toolsGroup = CollapsibleSettingCardGroup(self.tr("外部工具"), "tools", self.container)
+        toolsGroup.addSettingCard(self.commandLineToolCard)
+        integrationGroups = [self.browserGroup, self.aria2RpcGroup, toolsGroup]
         if sys.platform != "darwin":
-            self.addSettingGroup(self.associationGroup)
-        self.addSettingGroup(self.browserGroup)
-        self.addSettingGroup(self.aria2RpcGroup)
-        self.addSettingGroup(self.personalGroup)
-        self.addSettingGroup(self.softwareGroup)
-        for group in self._featureService.settingGroups(self.container):
-            self.addSettingGroup(group)
-        self.addSettingGroup(self.aboutGroup)
+            integrationGroups.append(self.associationGroup)
+        packs = CollapsibleSettingCardGroup(self.tr("功能包"), "packs", self.container)
+        packs.addSettingCard(self.packInfoCard)
+        packGroups = [packs, *self._featureService.settingGroups(self.container)]
+        for key, name, icon, groups in (
+            ("files", self.tr("下载与文件"), FluentIcon.FOLDER, [self.fileGroup, self.queueGroup, self.categoryGroup]),
+            ("browser", self.tr("浏览器与外部工具"), FluentIcon.LINK, integrationGroups),
+            ("appearance", self.tr("外观与行为"), FluentIcon.BRUSH, [self.personalGroup, self.softwareGroup, self.aboutGroup]),
+            ("sites", self.tr("站点与协议"), FluentIcon.GLOBE, packGroups),
+            ("advanced", self.tr("网络与高级"), FluentIcon.VPN, [self.generalGroup]),
+        ):
+            button = self.sidebar.add(name, icon)
+            button.setCheckable(True)
+            self.sectionButtons[key] = button
+            section = QWidget(self.container)
+            layout = QVBoxLayout(section)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(12)
+            order = cfg.settingGroupOrder.value
+            if key != "files":
+                groups = sorted(groups, key=lambda g: order.index(g.objectName()) if g.objectName() in order else len(order))
+            for group in groups:
+                layout.addWidget(group)
+            for group in groups:
+                group.updateArrows()
+            self.sections[key] = section
+            self.vBoxLayout.addWidget(section)
+        self.vBoxLayout.addStretch()
+        self.setSection("files")
+
+    def setSection(self, key: str) -> None:
+        self._section = key
+        self.sectionChanged.emit()
+        self.setSearchText("")
+        self.verticalScrollBar().setValue(0)
 
     def _bind(self) -> None:
+        for key, button in self.sectionButtons.items():
+            button.clicked.connect(lambda _, key=key: self.setSection(key))
+        cfg.isCategoryEnabled.valueChanged.connect(lambda _: self.setSearchText(self._searchText))
         cfg.appRestartSig.connect(self._showRestartTooltip)
         cfg.browserExtensionPairToken.valueChanged.connect(self._refreshPairTokenCard)
         self._browserService.connectionChanged.connect(self._refreshBrowserStatus, owner=self)
@@ -590,14 +635,25 @@ class SettingPage(FastScrollArea):
         return self.tr("搜索设置")
 
     def setSearchText(self, text: str) -> None:
+        self._searchText = text.strip()
+        isSearching = bool(self._searchText)
+        self.heading.setText(self.tr("搜索结果") if isSearching else self.sectionButtons[self._section].text())
         hasMatch = False
-        for i in range(self.vBoxLayout.count()):
-            group = self.vBoxLayout.itemAt(i).widget()
-            if not isinstance(group, CollapsibleSettingCardGroup):
+        for key, section in self.sections.items():
+            self.sectionButtons[key].setChecked(not isSearching and key == self._section)
+            section.setVisible(isSearching or key == self._section)
+            if section.isHidden():
                 continue
-            group.setSearchText(text)
-            hasMatch = hasMatch or not group.isHidden()
-
+            layout = section.layout()
+            sectionHasMatch = False
+            for index in range(layout.count()):
+                group = layout.itemAt(index).widget()
+                group.setSearchText(self._searchText)
+                sectionHasMatch |= not group.isHidden()
+            section.setVisible(sectionHasMatch)
+            hasMatch |= sectionHasMatch
+        if not isSearching:
+            self.categoryRulesCard.setVisible(cfg.isCategoryEnabled.value)
         self.emptyStatusWidget.setVisible(not hasMatch)
         if not hasMatch:
             self.emptyStatusWidget.adjustSize()
@@ -613,27 +669,3 @@ class SettingPage(FastScrollArea):
         super().resizeEvent(event)
         if self.emptyStatusWidget.isVisible():
             self._refreshEmptyWidgetGeometry()
-
-    def showEvent(self, event) -> None:
-        self._restoreOrder()
-        super().showEvent(event)
-
-    def _restoreOrder(self) -> None:
-        groups = [
-            self.vBoxLayout.itemAt(i).widget()
-            for i in range(self.vBoxLayout.count())
-            if self.vBoxLayout.itemAt(i).widget()
-        ]
-        keyToWidget = {g.objectName(): g for g in groups}
-        order = [k for k in cfg.settingGroupOrder.value if k in keyToWidget]
-        rest = [k for k in keyToWidget if k not in order]
-        aboutKey = self.aboutGroup.objectName()
-        if aboutKey in rest:
-            rest.remove(aboutKey)
-            rest.append(aboutKey)
-        order += rest
-        for idx, key in enumerate(order):
-            self.vBoxLayout.insertWidget(idx, keyToWidget[key])
-        for g in groups:
-            if isinstance(g, CollapsibleSettingCardGroup):
-                g.updateArrows()

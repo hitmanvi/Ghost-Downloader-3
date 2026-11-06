@@ -1,7 +1,7 @@
 from PySide6.QtCore import Qt, QRectF, QTimer
 from PySide6.QtGui import QColor, QPainter, QPaintEvent
 from PySide6.QtWidgets import QWidget
-from qfluentwidgets import isDarkTheme, themeColor
+from qfluentwidgets import isDarkTheme
 
 from app.view.cards.task_cards import TaskCard
 from .task import HttpTaskStep
@@ -59,7 +59,7 @@ class SegmentedProgressBar(QWidget):
             return QColor(252, 225, 0) if isDarkTheme() else QColor(157, 93, 0)
         if self._isError:
             return QColor(255, 153, 164) if isDarkTheme() else QColor(196, 43, 28)
-        return themeColor()
+        return QColor("#56cdb9" if isDarkTheme() else "#09887d")
 
     def _toMergedSpans(self) -> list[tuple[float, float]]:
         intervals = sorted(

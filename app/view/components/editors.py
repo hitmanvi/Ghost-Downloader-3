@@ -8,7 +8,7 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QSizePolicy, QWidget
 from qfluentwidgets import (
     Action, BodyLabel, CaptionLabel, FluentIcon, LineEdit, PlainTextEdit,
-    RoundMenu, ToolTipFilter, TransparentToolButton,
+    PushButton, RoundMenu, ToolTipFilter, TransparentToolButton,
 )
 
 from app.config.cfg import cfg
@@ -69,13 +69,14 @@ class AutoSizingLineEdit(LineEdit):
 class FolderPicker(QWidget):
     pathChanged = Signal(str)
 
-    def __init__(self, pinnedPath: Callable[[], str], pinnedLabel: str, parent=None):
+    def __init__(self, pinnedPath: Callable[[], str], pinnedLabel: str, parent=None, *, browseText=""):
         super().__init__(parent)
         self._pinnedPath = pinnedPath
         self._pinnedLabel = pinnedLabel
         self.lineEdit = AutoSizingLineEdit(self)
         self.menuAction = Action(FluentIcon.ARROW_DOWN, self.tr("常用文件夹"), self)
-        self.browseButton = TransparentToolButton(FluentIcon.FOLDER, self)
+        self.browseButton = (PushButton(browseText, self) if browseText
+                             else TransparentToolButton(FluentIcon.FOLDER, self))
 
         self._initWidget()
         self._initLayout()
@@ -84,7 +85,8 @@ class FolderPicker(QWidget):
     def _initWidget(self) -> None:
         self.lineEdit.setMinimumWidth(200)
         self.lineEdit.addAction(self.menuAction)
-        self.browseButton.setFixedSize(28, 28)
+        if isinstance(self.browseButton, TransparentToolButton):
+            self.browseButton.setFixedSize(28, 28)
         self.browseButton.setToolTip(self.tr("浏览文件夹"))
         self.browseButton.installEventFilter(ToolTipFilter(self.browseButton))
 

@@ -114,9 +114,10 @@ def isSearchMatch(card: SettingCard | CollapsibleSettingCard, text: str) -> bool
 class CollapsibleSettingCardGroup(CardWidget):
     orderChanged = Signal()
 
-    def __init__(self, title: str, key: str, parent=None):
+    def __init__(self, title: str, key: str, parent=None, *, isFixed=False):
         super().__init__(parent)
         self.setObjectName(key)
+        self._isFixed = isFixed
 
         self.titleLabel = StrongBodyLabel(title, self)
         self.moveUpButton = TransparentToolButton(FluentIcon.UP, self)
@@ -148,7 +149,8 @@ class CollapsibleSettingCardGroup(CardWidget):
 
         FluentStyleSheet.SETTING_CARD_GROUP.apply(self)
 
-        self._collapsed = self.objectName() not in cfg.expandedSettingGroups.value
+        self.expandButton.setVisible(not self._isFixed)
+        self._collapsed = not self._isFixed and self.objectName() not in cfg.expandedSettingGroups.value
         self.cardContainer.setMaximumHeight(0 if self._collapsed else QWIDGETSIZE_MAX)
         self.expandButton.setAngle(0 if self._collapsed else 180)
 
@@ -209,11 +211,11 @@ class CollapsibleSettingCardGroup(CardWidget):
             card.setVisible(isMatch)
             hasMatch = hasMatch or isMatch
         self.setVisible(hasMatch or not text)
-        isExpand = (bool(text) and hasMatch) or self.objectName() in cfg.expandedSettingGroups.value
+        isExpand = self._isFixed or (bool(text) and hasMatch) or self.objectName() in cfg.expandedSettingGroups.value
         self._setCollapsed(not isExpand)
 
     def mousePressEvent(self, event) -> None:
-        if event.button() == Qt.MouseButton.LeftButton and event.position().y() < self.cardContainer.geometry().top():
+        if not self._isFixed and event.button() == Qt.MouseButton.LeftButton and event.position().y() < self.cardContainer.geometry().top():
             self._onExpandClicked()
         super().mousePressEvent(event)
 
@@ -225,8 +227,8 @@ class CollapsibleSettingCardGroup(CardWidget):
 
     def enterEvent(self, event) -> None:
         super().enterEvent(event)
-        self.moveUpButton.setVisible(True)
-        self.moveDownButton.setVisible(True)
+        self.moveUpButton.setVisible(not self._isFixed)
+        self.moveDownButton.setVisible(not self._isFixed)
 
     def leaveEvent(self, event) -> None:
         super().leaveEvent(event)

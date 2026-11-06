@@ -6,12 +6,13 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QCoreApplication, QEvent, QRect, QUrl, QTimer, Qt
 from PySide6.QtGui import QColor, QIcon, QDesktopServices, QKeySequence, QPainter, QPalette, QShortcut
-from PySide6.QtWidgets import QApplication, QHBoxLayout, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QHBoxLayout, QStackedWidget, QVBoxLayout, QWidget
 from qfluentwidgets import (
-    MSFluentWindow, FluentIcon, NavigationItemPosition, MessageBox, Theme, InfoBar, InfoBarIcon, InfoBarPosition,
+    MSFluentTitleBar, FluentIcon, MessageBox, Theme, InfoBar, InfoBarIcon, InfoBarPosition,
     SearchLineEdit, setThemeColor, IconWidget, SubtitleLabel, isDarkTheme, CheckBox, PrimaryPushButton,
     PushButton, ToolTipFilter, TransparentToolButton, qconfig,
 )
+from qfluentwidgets.window.fluent_window import FluentWindowBase
 from qfluentwidgets.common import qrouter
 from qfluentwidgets.common.style_sheet import updateStyleSheet
 from qfluentwidgets.components.dialog_box.mask_dialog_base import MaskDialogBase
@@ -24,7 +25,6 @@ from app.services.task_draft import TaskDraft
 from app.i18n import toLocalizedError
 from app.models.task import TaskError, TaskOptions
 from app.services.port_listener import PortListener
-from app.signal_bus import signalBus
 from app.services.update_service import UpdateState
 from app.update import fetchAssetUrl, fetchBestAssetUrl, fetchRelease
 from app.view.components.labels import IconBodyLabel
@@ -41,7 +41,6 @@ if sys.platform == "darwin":
     from qframelesswindow.utils.mac_utils import getNSWindow
 
 if TYPE_CHECKING:
-    from qfluentwidgets import FluentIconBase
     from app.models.task import Task
     from app.services.browser_service import BrowserService, PairRequest
     from app.services.category_service import CategoryService
@@ -83,7 +82,7 @@ class DropOverlay(QWidget):
         painter.fillRect(self.rect(), bgColor)
 
 
-class MainWindow(MSFluentWindow):
+class MainWindow(FluentWindowBase):
 
     def __init__(
         self,
@@ -122,7 +121,10 @@ class MainWindow(MSFluentWindow):
         self._pages: dict[str, QWidget] = {}
         self._progressToast = None
         self._draft = TaskDraft(self._coroutineRunner, self._featureService, self._taskService.add)
+        self.setTitleBar(MSFluentTitleBar(self))
         self.searchEdit = SearchLineEdit(self.titleBar)
+        self.sidebars = QStackedWidget(self)
+        self._packButtons = {}
 
         self._initWidget()
         self._initLayout()
@@ -136,7 +138,8 @@ class MainWindow(MSFluentWindow):
             self._refreshBackgroundEffect()
         elif sys.platform == "darwin" and cfg.backgroundEffect.value != "None":
             self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.titleBar.hBoxLayout.insertSpacing(2, 6)
+        self.titleBar.iconLabel.hide()
+        self.titleBar.titleLabel.hide()
         if sys.platform == "darwin":
             self.titleBar.hBoxLayout.insertSpacing(0, 60)
 
@@ -148,25 +151,22 @@ class MainWindow(MSFluentWindow):
         self._dropOverlay = DropOverlay(self)
 
     def _initLayout(self) -> None:
-        self._addPage(TaskPage, FluentIcon.DOWNLOAD, self.tr("下载任务"),
-                      NavigationItemPosition.TOP)
-        self.navigationInterface.addItem(
-            routeKey="addTaskButton",
-            text=self.tr("新建任务"),
-            selectable=False,
-            icon=FluentIcon.ADD,
-            onClick=lambda: self.addUrls([]),
-            position=NavigationItemPosition.TOP,
-        )
-        self._addPage(SettingPage, FluentIcon.SETTING, self.tr("设置"),
-                      NavigationItemPosition.BOTTOM)
+        self.sidebars.setFixedWidth(184)
+        self.hBoxLayout.addWidget(self.sidebars)
+        content = QVBoxLayout()
+        content.setContentsMargins(0, self.titleBar.height(), 0, 0)
+        content.addWidget(self.stackedWidget)
+        self.hBoxLayout.addLayout(content, 1)
         self._showPage(TaskPage)
+        self.titleBar.raise_()
 
     def setupPacks(self) -> None:
-        for PageClass in self._featureService.pages():
-            self._addPage(PageClass, PageClass.icon,
-                          QCoreApplication.translate("PackPage", PageClass.title),
-                          NavigationItemPosition.TOP)
+        sidebar = self._pages[TaskPage.__name__].sidebar
+        for pageClass in self._featureService.pages():
+            button = sidebar.add(QCoreApplication.translate("PackPage", pageClass.title), pageClass.icon)
+            button.setCheckable(True)
+            button.clicked.connect(lambda _, page=pageClass: self._showPage(page))
+            self._packButtons[pageClass] = button
 
     def systemTitleBarRect(self, size) -> QRect:
         return QRect(0, 10, 75, size.height())
@@ -180,13 +180,6 @@ class MainWindow(MSFluentWindow):
             return self._darkBackgroundColor if isDarkTheme() else self._lightBackgroundColor
         return QColor(0, 0, 0, 0)
 
-    def _addPage(self, pageClass: type[QWidget], icon: FluentIconBase, text: str,
-                 position: NavigationItemPosition) -> None:
-        self.navigationInterface.addItem(
-            routeKey=pageClass.__name__, icon=icon, text=text,
-            onClick=lambda: self._showPage(pageClass), position=position,
-        )
-
     def _showPage(self, pageClass: type[QWidget]) -> None:
         routeKey = pageClass.__name__
         page = self._pages.get(routeKey)
@@ -195,28 +188,59 @@ class MainWindow(MSFluentWindow):
             page.setObjectName(routeKey)
             # addSubInterface 会设这个属性，懒创建绕过了它；不设时每次切页都会重刷整个内容区的样式
             page.setProperty("isStackedTransparent", False)
+            if isinstance(page, (SettingPage, TaskPage)):
+                self.sidebars.addWidget(page.sidebar)
             self.stackedWidget.addWidget(page)
             self._pages[routeKey] = page
             if self.stackedWidget.count() == 1:
                 self.stackedWidget.currentChanged.connect(self._onCurrentInterfaceChanged)
                 qrouter.setDefaultRouteKey(self.stackedWidget, routeKey)
-        self.switchTo(page)
-        self.navigationInterface.setCurrentItem(routeKey)
+        if self.stackedWidget.currentWidget() is page:
+            self._updateNavigation(page)
+        else:
+            self.switchTo(page)
+
+    def _onCurrentInterfaceChanged(self, index: int) -> None:
+        page = self.stackedWidget.widget(index)
+        qrouter.push(self.stackedWidget, page.objectName())
+        self._updateStackedBackground()
+        self._updateNavigation(page)
+
+    def _updateNavigation(self, page) -> None:
+        taskPage = self._pages[TaskPage.__name__]
+        sidebar = page.sidebar if isinstance(page, SettingPage) else taskPage.sidebar
+        self.sidebars.setCurrentWidget(sidebar)
+        for pageClass, button in self._packButtons.items():
+            button.setChecked(type(page) is pageClass)
+        taskPage.setFilterSelected(page is taskPage)
         self._updateSearchTarget(page)
 
     def _createPage(self, pageClass: type[QWidget]) -> QWidget:
         if pageClass is TaskPage:
-            return TaskPage(
+            page = TaskPage(
                 self._taskService, self._featureService,
                 self._categoryService, self._speedMeter, self._plan, parent=self,
             )
+            page.urlsRequested.connect(self.addUrls)
+            page.filterRequested.connect(self._onTaskFilterRequested)
+            page.sidebar.add(self.tr("设置"), FluentIcon.SETTING, bottom=True).clicked.connect(
+                lambda: self._showPage(SettingPage))
+            return page
         if pageClass is SettingPage:
-            return SettingPage(
+            page = SettingPage(
                 self._featureService, self._browserService, self._browserListener, self._aria2RpcListener,
                 self._coroutineRunner, self._categoryService, self._taskService,
                 self._updateService, parent=self,
             )
+            page.sidebar.add(self.tr("返回任务"), FluentIcon.RETURN, bottom=True).clicked.connect(
+                lambda: self._showPage(TaskPage))
+            page.sectionChanged.connect(self.searchEdit.clear)
+            return page
         return self._featureService.createPage(pageClass, parent=self)
+
+    def _onTaskFilterRequested(self) -> None:
+        if self.stackedWidget.currentWidget() is not self._pages[TaskPage.__name__]:
+            self._showPage(TaskPage)
 
     def _onSearchTextChanged(self, text: str) -> None:
         page = self.stackedWidget.currentWidget()
@@ -227,16 +251,19 @@ class MainWindow(MSFluentWindow):
         self.searchEdit.clear()
         if hasattr(page, 'searchPlaceholder'):
             self.searchEdit.setPlaceholderText(page.searchPlaceholder)
+            if hasattr(page, "setSearchText"):
+                page.setSearchText("")
             self.searchEdit.show()
+            self._refreshSearchEditGeometry()
         else:
             self.searchEdit.hide()
 
     def _refreshSearchEditGeometry(self) -> None:
         tb = self.titleBar
-        w = min(360, tb.width() - 300)
+        w = min(248, tb.width() - 300)
         w = max(200, w)
         self.searchEdit.setFixedWidth(w)
-        x = (tb.width() - w) // 2
+        x = tb.width() - w - (28 if sys.platform == "darwin" else 156)
         y = (tb.height() - self.searchEdit.height()) // 2
         self.searchEdit.move(x, y)
 
